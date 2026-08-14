@@ -152,6 +152,9 @@ fieldset legend { color: var(--dim); padding: 0 6px; }
   border: 1px solid #3A4763;
   white-space: nowrap;
 }
+.cardbtn.fan { display: inline-flex; align-items: flex-end; }
+.cardbtn.fan > svg + svg { margin-left: -46px; }
+.cardbtn.fan > svg:not(:last-child) { filter: brightness(0.78); }
 .cardbtn.selected { outline: 3px solid var(--go); outline-offset: 2px; }
 .cardbtn.target { animation: pulse 0.9s ease-in-out infinite; outline: 3px solid var(--go); outline-offset: 2px; border-radius: 10px; }
 .cardbtn.shake { animation: shake 0.3s linear; }

@@ -1,7 +1,7 @@
 import { GameState, matchWinners } from '@stackrush/core';
 import { Strings, t } from '../i18n/index.js';
 import { OWNER_COLORS } from './cards.js';
-import { h } from './dom.js';
+import { fromHTML, h } from './dom.js';
 import type { TableHostControls } from './table.js';
 
 /**
@@ -26,32 +26,51 @@ export function renderEndSheet(
 
   const isMatchEnd = state.phase === 'matchEnded';
   const lastScores = state.roundScores[state.roundScores.length - 1] ?? [];
+  const name = (i: number) => players[i]?.name ?? `P${i + 1}`;
 
-  // headline
+  // headline + the reason the round/match ended
   if (isMatchEnd) {
-    const winners = matchWinners(state).map(i => players[i]?.name ?? `P${i + 1}`);
+    const winners = matchWinners(state).map(name);
     sheet.append(h('h2', {}, winners.length === 1
       ? t(S, 'matchWinner', { name: winners[0] })
       : t(S, 'matchWinners', { names: winners.join(', ') })));
+    sheet.append(h('div', { className: 'breakdown' },
+      t(S, 'winByPoints', { n: state.roundScores.length })));
   } else {
     sheet.append(h('h2', {}, t(S, 'round', { n: state.round })));
-    sheet.append(h('div', { className: 'breakdown' }, state.roundEndedBy === -1
-      ? S.stalemate
-      : t(S, 'roundEndedBy', { name: players[state.roundEndedBy]?.name ?? '?' })));
   }
+  sheet.append(h('div', { className: 'breakdown' }, state.roundEndedBy === -1
+    ? S.stalemate
+    : t(S, 'stoppedBy', { name: name(state.roundEndedBy) })));
 
-  // per-player delta breakdown for the round just played
+  // counted points for the round just played, fully broken out
   const centerCount = (player: number) =>
     state.center.reduce((n, pile) => n + pile.owners.filter(o => o === player).length, 0);
+  const table = h('table', { className: 'rounds' });
+  table.append(h('tr', {},
+    h('th', {}, ''),
+    h('th', {}, `${S.colCenter} +1`),
+    h('th', {}, `${S.colQuick} −2`),
+    h('th', {}, S.colRound),
+    h('th', {}, S.colTotal),
+  ));
   for (let i = 0; i < state.config.players; i++) {
+    const centers = centerCount(i);
     const quickLeft = state.players[i].quick.length;
-    sheet.append(h('div', { className: 'breakdown' },
-      `${players[i]?.name ?? `P${i + 1}`}: `,
-      `${t(S, 'centerCards', { n: centerCount(i) })} · `,
-      `${t(S, 'quickPenalty', { n: quickLeft })} → `,
-      h('b', {}, `${lastScores[i] >= 0 ? '+' : ''}${lastScores[i] ?? 0}`),
-    ));
+    const round = lastScores[i] ?? 0;
+    const row = h('tr', {},
+      h('td', {},
+        fromHTML(`<span class="dot" style="background:${OWNER_COLORS[i]};display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px"></span>`),
+        name(i)),
+      h('td', {}, `${centers} → +${centers}`),
+      h('td', {}, `${quickLeft} → −${2 * quickLeft}`),
+      h('td', {}, h('b', {}, `${round >= 0 ? '+' : ''}${round}`)),
+      h('td', {}, String(state.totals[i])),
+    );
+    if (state.roundEndedBy === i) row.style.color = 'var(--go)';
+    table.append(row);
   }
+  sheet.append(table);
 
   // running totals as a bar race
   const maxAbs = Math.max(1, ...state.totals.map(v => Math.abs(v)));
@@ -69,18 +88,20 @@ export function renderEndSheet(
     ));
   });
 
-  // per-round table on match end
+  // per-round history on match end
   if (isMatchEnd && state.roundScores.length > 1) {
-    const table = h('table', { className: 'rounds' });
+    const history = h('table', { className: 'rounds' });
     const head = h('tr', {}, h('th', {}, S.score));
     state.roundScores.forEach((_, r) => head.append(h('th', {}, `R${r + 1}`)));
-    table.append(head);
+    head.append(h('th', {}, S.colTotal));
+    history.append(head);
     for (let i = 0; i < state.config.players; i++) {
-      const row = h('tr', {}, h('td', {}, players[i]?.name ?? `P${i + 1}`));
+      const row = h('tr', {}, h('td', {}, name(i)));
       state.roundScores.forEach(scores => row.append(h('td', {}, String(scores[i]))));
-      table.append(row);
+      row.append(h('td', {}, h('b', {}, String(state.totals[i]))));
+      history.append(row);
     }
-    sheet.append(table);
+    sheet.append(history);
   }
 
   if (host) {

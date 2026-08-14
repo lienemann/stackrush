@@ -5,7 +5,7 @@ function legalCenterActions(g: GameState, player: number): Action[] {
   const p = g.players[player];
   const srcs: Source[] = [
     ...p.row.map((st, slot) => st.length ? [{ kind: 'row', slot } as Source] : []).flat(),
-    ...(p.quick[0] ? [{ kind: 'quick' } as Source] : []),
+    ...(g.config.quickToCenter && p.quick[0] ? [{ kind: 'quick' } as Source] : []),
     ...(p.waste[0] ? [{ kind: 'waste' } as Source] : []),
   ];
   const acts: Action[] = [];

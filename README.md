@@ -36,10 +36,11 @@ The app deploys to GitHub Pages as an installable, offline-capable PWA:
 
 ## Rule gaps
 
-The official rulebook is underspecified in 8 places; each gap is documented in
-`docs/RULES-GAPS.md` and selectable via `Config` (G1 refill manual/auto,
-G2 round end auto/call, G3 descending any/−1, G4 empty slot, G5 shuffle/flip,
-G6 slot stacks, G7 stalemate detection + host timeout, G8 in-flight policy).
+The official rulebook is underspecified or house-ruled in 9 places; each is
+documented in `docs/RULES-GAPS.md` and selectable via `Config` (G1 refill
+manual/auto, G2 round end auto/call, G3 descending any/−1, G4 empty slot,
+G5 shuffle/flip, G6 slot stacks, G7 stalemate detection + host timeout,
+G8 in-flight policy, G9 quick pile straight to center on/off).
 
 ## Fairness / latency (docs/latency_sim.py, docs/arb_sim.py)
 

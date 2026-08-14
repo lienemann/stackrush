@@ -59,7 +59,7 @@ test('flipHand goes through the arbiter window and broadcasts a new version', as
 test('race on the same pile: faster reactionMs wins, loser rolls back', async () => {
   // find a deal where p0 can open a pile with a 1 and BOTH players then hold
   // a visible 2 of that color (deterministic search over seeds)
-  const cfg = makeConfig({ players: 2 });
+  const cfg = makeConfig({ players: 2, quickToCenter: true });
   type Src = { kind: 'row'; slot: number } | { kind: 'quick' };
   const visible = (p: { row: Card[][]; quick: Card[] }, skipQuickTop: boolean): Array<{ card: Card; src: Src }> => {
     const out: Array<{ card: Card; src: Src }> = [];
@@ -83,7 +83,8 @@ test('race on the same pile: faster reactionMs wins, loser rolls back', async ()
 
   const hub = new LoopbackHub();
   const hostNet = hub.endpoint('host-net');
-  const host = new HostSession({}, 'RACE1', [hostNet]);
+  // the staged race plays quick cards straight to the center -> G9 on
+  const host = new HostSession({ quickToCenter: true }, 'RACE1', [hostNet]);
   const alice = new ClientSession(hub.endpoint('devA'), 'devA');
   const bob = new ClientSession(hub.endpoint('devB'), 'devB');
   alice.hello(['Alice']);
