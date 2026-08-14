@@ -1,0 +1,229 @@
+import '@fontsource/archivo-black/index.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-600.css';
+import './styles.css';
+
+import { LoopbackHub, Transport } from '@stackrush/net';
+import { Strings } from './i18n/index.js';
+import { DeviceSettings, loadSettings, saveSettings, strings } from './settings.js';
+import { HostSession } from './game/host.js';
+import { ClientSession } from './game/client.js';
+import { newRoomCode } from './game/protocol.js';
+import { TableView } from './ui/table.js';
+import { renderHome, renderLobby, showGameMenu } from './ui/screens.js';
+import { h, toast } from './ui/dom.js';
+import {
+  initInstallPrompt, initServiceWorker, initWakeLock,
+  installTrigger, onInstallAvailabilityChange, setWakeLock,
+} from './pwa.js';
+
+type Screen = 'home' | 'lobby' | 'table';
+
+const root = document.getElementById('app')!;
+const settings: DeviceSettings = loadSettings();
+let S: Strings = strings(settings);
+
+let screen: Screen = 'home';
+let host: HostSession | null = null;
+let client: ClientSession | null = null;
+let table: TableView | null = null;
+let stopBeacon: (() => void) | null = null;
+let stopAcoustic: (() => void) | null = null;
+let helloTimer: ReturnType<typeof setInterval> | null = null;
+
+initServiceWorker();
+initInstallPrompt();
+initWakeLock();
+onInstallAvailabilityChange(() => { if (screen === 'home') render(); });
+
+// ---------- session wiring ----------
+
+function attachClient(c: ClientSession, seatNames: string[]): void {
+  settings.seatNames = seatNames;
+  saveSettings(settings);
+  client = c;
+  c.on('lobby', () => {
+    if (screen !== 'table') { screen = 'lobby'; render(); }
+    else render(); // chips / connection badges update mid-game
+  });
+  c.on('state', () => {
+    if (screen !== 'table') screen = 'table';
+    render();
+  });
+  c.on('rollback', action => table?.rollback(action));
+  c.on('refused', () => { toast(S.roomFull); leave(); });
+  c.on('hostGone', () => {
+    if (!host) showBanner(S.hostGone);
+  });
+  c.hello(seatNames);
+}
+
+function playLocal(seatNames: string[]): void {
+  const hub = new LoopbackHub();
+  host = new HostSession({}, null, [hub.endpoint('host-net')]);
+  attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey), seatNames);
+}
+
+async function hostOnline(seatNames: string[]): Promise<void> {
+  const code = newRoomCode();
+  const hub = new LoopbackHub();
+  let transports: Transport[] = [hub.endpoint('host-net')];
+  try {
+    const { TrysteroTransport } = await import('@stackrush/net/trystero');
+    transports = [...transports, new TrysteroTransport(code)];
+  } catch {
+    toast('WebRTC unavailable — local play only');
+  }
+  host = new HostSession({}, code, transports);
+  attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey), seatNames);
+}
+
+async function join(code: string, seatNames: string[]): Promise<void> {
+  try {
+    const { TrysteroTransport } = await import('@stackrush/net/trystero');
+    const tr = new TrysteroTransport(code);
+    const c = new ClientSession(tr, settings.deviceKey);
+    attachClient(c, seatNames);
+    // signaling is asynchronous: repeat hello until the host's lobby arrives
+    tr.onPeerJoin(() => { if (!c.lobby) c.hello(seatNames); });
+    helloTimer = setInterval(() => {
+      if (c.lobby) { clearInterval(helloTimer!); helloTimer = null; return; }
+      c.hello(seatNames);
+    }, 1500);
+    screen = 'lobby';
+    render();
+  } catch {
+    toast(S.hostGone);
+  }
+}
+
+/** acoustic pairing, joiner side: listen for a room-code beacon */
+async function listenForCode(seatNames: string[]): Promise<void> {
+  try {
+    const { AcousticTransport } = await import('@stackrush/net/acoustic');
+    const ac = new AcousticTransport({ deviceId: 2 });
+    await ac.start(true);
+    stopAcoustic = () => ac.close();
+    toast(S.listening, 6000);
+    ac.onMessage((_peer, data) => {
+      const text = new TextDecoder().decode(data);
+      if (text.startsWith('SR:')) {
+        stopAcoustic?.();
+        stopAcoustic = null;
+        void join(text.slice(3), seatNames);
+      }
+    });
+  } catch {
+    toast(S.micDenied);
+  }
+}
+
+/** acoustic pairing, host side: beacon the room code */
+async function beaconCode(): Promise<void> {
+  const code = client?.lobby?.roomCode;
+  if (!code) return;
+  if (stopBeacon) { stopBeacon(); stopBeacon = null; return; } // toggle off
+  try {
+    const { AcousticTransport } = await import('@stackrush/net/acoustic');
+    const ac = new AcousticTransport({ deviceId: 1 });
+    await ac.start(false); // speaker only, no mic needed to beacon
+    const stop = ac.beacon(new TextEncoder().encode(`SR:${code}`));
+    stopBeacon = () => { stop(); ac.close(); };
+    toast(S.beaconing, 4000);
+  } catch {
+    toast(S.micDenied);
+  }
+}
+
+function leave(): void {
+  stopBeacon?.(); stopBeacon = null;
+  stopAcoustic?.(); stopAcoustic = null;
+  if (helloTimer) { clearInterval(helloTimer); helloTimer = null; }
+  client?.close();
+  host?.close();
+  client = null;
+  host = null;
+  table = null;
+  setWakeLock(false);
+  hideBanner();
+  screen = 'home';
+  render();
+}
+
+// ---------- banner ----------
+
+let banner: HTMLElement | null = null;
+function showBanner(text: string): void {
+  hideBanner();
+  banner = h('div', { className: 'banner' }, text);
+  document.body.append(banner);
+}
+function hideBanner(): void { banner?.remove(); banner = null; }
+
+// ---------- render loop ----------
+
+function render(): void {
+  S = strings(settings);
+  switch (screen) {
+    case 'home':
+      setWakeLock(false);
+      renderHome(root, S, settings, {
+        onPlayLocal: playLocal,
+        onHostOnline: n => void hostOnline(n),
+        onJoin: (code, n) => void join(code, n),
+        onListen: n => void listenForCode(n),
+        onLocale: setLocale,
+        installPrompt: installTrigger(),
+      });
+      return;
+    case 'lobby': {
+      const lobby = client?.lobby;
+      if (!lobby) {
+        root.replaceChildren(h('div', { className: 'screen' },
+          h('p', { className: 'tagline' }, S.waitingForHost),
+          h('button', { className: 'ghost', onclick: leave }, S.leaveGame)));
+        return;
+      }
+      renderLobby(root, S, lobby, {
+        isHost: host !== null,
+        onStart: () => host?.start(),
+        onConfig: patch => host?.updateConfig(patch),
+        onBeacon: () => void beaconCode(),
+        onLeave: leave,
+      });
+      return;
+    }
+    case 'table': {
+      if (!client) return;
+      stopBeacon?.(); stopBeacon = null; // pairing done once the game runs
+      if (!table) {
+        table = new TableView(root, client, settings.deviceKey, S,
+          host ? {
+            nextRound: () => host!.nextRound(),
+            rematch: () => host!.rematch(),
+            backToLobby: () => { table = null; screen = 'lobby'; host!.backToLobby(); },
+          } : null,
+          () => showGameMenu(S, settings, setLocale, leave));
+      }
+      table.setStrings(S);
+      table.render();
+      const playing = client.displayState()?.phase === 'playing';
+      setWakeLock(!!playing);
+      // stamp the render time of this authoritative version — the basis of
+      // reactionMs (docs/ARCHITECTURE.md data flow)
+      const version = client.version;
+      requestAnimationFrame(ts => client?.markRendered(version, ts));
+      return;
+    }
+  }
+}
+
+function setLocale(locale: DeviceSettings['locale']): void {
+  settings.locale = locale;
+  saveSettings(settings);
+  render();
+}
+
+window.addEventListener('pagehide', () => { host?.close(); client?.close(); });
+
+render();

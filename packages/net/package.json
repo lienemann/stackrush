@@ -1,0 +1,25 @@
+{
+  "name": "@stackrush/net",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./trystero": "./src/trystero.ts",
+    "./acoustic": "./src/acoustic/transport.ts"
+  },
+  "scripts": {
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@stackrush/core": "*"
+  },
+  "peerDependencies": {
+    "trystero": "^0.25.0"
+  },
+  "peerDependenciesMeta": {
+    "trystero": {
+      "optional": true
+    }
+  }
+}

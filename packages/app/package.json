@@ -1,0 +1,25 @@
+{
+  "name": "@stackrush/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node ../../scripts/gen-icons.mjs",
+    "dev": "vite",
+    "prebuild": "node ../../scripts/gen-icons.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@fontsource/archivo-black": "^5.2.0",
+    "@fontsource/inter": "^5.2.0",
+    "@stackrush/core": "*",
+    "@stackrush/net": "*",
+    "trystero": "^0.25.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "vite-plugin-pwa": "^1.0.0"
+  }
+}

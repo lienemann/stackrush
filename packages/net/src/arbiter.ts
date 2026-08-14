@@ -1,4 +1,4 @@
-import { Action } from '../../core/src/types.js';
+import { Action } from '@stackrush/core';
 
 /**
  * Reaction-time arbitration (see docs/ARCHITECTURE.md, "Latency & fairness").
