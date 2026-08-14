@@ -1,5 +1,6 @@
 import {
-  Action, Config, GameState, Rejection, apply, isHardStalemate, makeConfig, newGame,
+  Action, BotLevel, Config, GameState, Rejection, apply, botReactionMs, chooseBotAction,
+  isHardStalemate, makeConfig, newGame,
 } from '@stackrush/core';
 import { Arbiter, PeerId, Transport, decodeMsg, encodeMsg } from '@stackrush/net';
 import { ClientMsg, HostMsg, LobbyState } from './protocol.js';
@@ -13,10 +14,22 @@ import { ClientMsg, HostMsg, LobbyState } from './protocol.js';
 
 const PING_INTERVAL_MS = 2000;
 const WATCHDOG_INTERVAL_MS = 1000;
+const BOT_TICK_MS = 60;
 /** G5/G7: mandatory inactivity timeout — a livelock is reachable by rule */
 const STALEMATE_TIMEOUT_MS = 10_000;
 
 interface PeerRef { transport: Transport; peer: PeerId }
+
+interface BotState {
+  level: BotLevel;
+  /** host time at which the bot may next act (state arrival + reaction) */
+  readyAt: number;
+  /** the reaction it is currently "spending" — reported to the Arbiter */
+  reaction: number;
+  /** last state version it acted on (one tap per state, like a human) */
+  actedVersion: number;
+  lastActAt: number;
+}
 
 export class HostSession {
   private arbiter = new Arbiter();
@@ -28,6 +41,9 @@ export class HostSession {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private watchdog: ReturnType<typeof setInterval> | null = null;
+  private botTimer: ReturnType<typeof setInterval> | null = null;
+  private bots = new Map<number, BotState>(); // player index -> bot driver state
+  private botSeq = 0;
   private pings = new Map<number, { deviceKey: string; sentAt: number }>();
   private pingSeq = 0;
   private lastAcceptedAt = performance.now();
@@ -50,12 +66,30 @@ export class HostSession {
     });
     this.pingTimer = setInterval(() => this.pingAll(), PING_INTERVAL_MS);
     this.watchdog = setInterval(() => this.checkStalemate(), WATCHDOG_INTERVAL_MS);
+    this.botTimer = setInterval(() => this.tickBots(), BOT_TICK_MS);
   }
 
   // ---------- lobby ----------
 
   updateConfig(patch: Partial<Config>): void {
     this.lobby.config = { ...this.lobby.config, ...patch };
+    this.broadcastLobby();
+  }
+
+  /** Add a computer player (lobby only). */
+  addBot(level: BotLevel): void {
+    if (this.lobby.started || this.lobby.players.length >= 4) return;
+    const n = this.lobby.players.filter(p => p.bot !== undefined).length + 1;
+    this.lobby.players.push({ name: `🤖 ${n}·L${level}`, deviceKey: 'bot', connected: true, bot: level });
+    this.broadcastLobby();
+  }
+
+  /** Remove a seat by index (lobby only; humans free their seats by leaving). */
+  removePlayer(index: number): void {
+    if (this.lobby.started) return;
+    const pl = this.lobby.players[index];
+    if (!pl || pl.bot === undefined) return; // only bot seats are host-removable
+    this.lobby.players.splice(index, 1);
     this.broadcastLobby();
   }
 
@@ -126,6 +160,11 @@ export class HostSession {
     if (players < 2 || players > 4) return;
     this.lobby.config = makeConfig({ ...this.lobby.config, players });
     this.lobby.started = true;
+    this.bots.clear();
+    this.lobby.players.forEach((pl, i) => {
+      if (pl.bot !== undefined)
+        this.bots.set(i, { level: pl.bot as BotLevel, readyAt: 0, reaction: 0, actedVersion: -1, lastActAt: 0 });
+    });
     this.state = newGame(this.lobby.config, this.seed());
     this.version = 1;
     this.lastAcceptedAt = performance.now();
@@ -252,6 +291,39 @@ export class HostSession {
   private sendState(acceptedIds: string[] = []): void {
     if (!this.state) return;
     this.broadcast({ t: 'state', version: this.version, state: this.state, acceptedIds });
+    // a new state enables new moves — arm each bot's reaction clock for it
+    const now = performance.now();
+    for (const bs of this.bots.values()) {
+      bs.reaction = botReactionMs(bs.level, Math.random);
+      bs.readyAt = now + bs.reaction;
+    }
+  }
+
+  // ---------- bot driver ----------
+
+  /**
+   * One tap per bot per state, after its (level-derived) reaction delay. The
+   * intent carries that same reaction, so faster bots win reaction-time races
+   * against slower bots and humans exactly as a quick human would.
+   */
+  private tickBots(): void {
+    if (!this.state || this.state.phase !== 'playing' || this.bots.size === 0) return;
+    const now = performance.now();
+    for (const [player, bs] of this.bots) {
+      if (now < bs.readyAt) continue;
+      // one action per state version; retry after a short idle if nothing moved
+      if (bs.actedVersion === this.version && now - bs.lastActAt < 1500) continue;
+      const action = chooseBotAction(this.state, player, bs.level, Math.random);
+      if (!action) { bs.readyAt = now + 300; continue; }
+      this.arbiter.submit(
+        { action, stateVersion: this.version, reactionMs: Math.max(0, bs.reaction), sender: `bot#${player}#${++this.botSeq}` },
+        now,
+      );
+      this.scheduleFlush();
+      bs.actedVersion = this.version;
+      bs.lastActAt = now;
+      bs.readyAt = now + botReactionMs(bs.level, Math.random);
+    }
   }
 
   close(): void {
@@ -259,6 +331,7 @@ export class HostSession {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.watchdog) clearInterval(this.watchdog);
+    if (this.botTimer) clearInterval(this.botTimer);
     for (const tr of this.transports) tr.close();
   }
 }
