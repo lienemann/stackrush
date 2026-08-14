@@ -68,6 +68,20 @@ the table this app is built for). **Alternative:** `true` = booklet reading.
 The stalemate detector accounts for the switch: a locked quick card that
 would fit the center does not block a stalemate diagnosis.
 
+## G10 — Early stalemate abort vs. player-visible deadlock
+The booklet says the round ends early when the fitting cards "hide" in the
+piles — but the host can *prove* this from the face-down contents, which the
+players cannot see. Ending on that hidden knowledge feels arbitrary at the
+table.
+**Default:** `earlyStalemate: false`. The round then ends by itself only on a
+true **deadlock** — `isDeadlock()`, where no seat can make any move at all,
+not even a flip (computed from visible info only). Positions the host can
+*prove* are stuck (`isHardStalemate()`) still end, but only after a short
+grace period so players discover it themselves — which also remains the
+mandatory livelock backstop (G5/G7). Crucially, mere slow play never ends a
+round. **Alternative:** `true` = end immediately on `isHardStalemate()` (the
+old behavior, fastest but uses hidden knowledge).
+
 ## Unambiguous (no switches needed)
 Row sizes 5/4/3 · center: new pile only with a 1, build-up +1 same color,
 multiple piles per color · flip of 3 as a packet (former top ends up at the

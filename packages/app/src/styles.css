@@ -152,9 +152,13 @@ fieldset legend { color: var(--dim); padding: 0 6px; }
   border: 1px solid #3A4763;
   white-space: nowrap;
 }
-.cardbtn.fan { display: inline-flex; align-items: flex-end; }
+.cardbtn.fan { display: inline-flex; align-items: flex-end; position: relative; }
+.cardbtn.fan > svg { position: relative; }
 .cardbtn.fan > svg + svg { margin-left: -46px; }
-.cardbtn.fan > svg:not(:last-child) { filter: brightness(0.78); }
+.cardbtn.fan > svg:not(.top) { filter: brightness(0.68) saturate(0.85); }
+.cardbtn.fan > svg.top { box-shadow: -2px 0 0 var(--go); border-radius: 8px; }
+.cardbtn.inert { cursor: default; }
+.cardbtn.inert svg.face { opacity: 0.82; }
 .cardbtn.selected { outline: 3px solid var(--go); outline-offset: 2px; }
 .cardbtn.target { animation: pulse 0.9s ease-in-out infinite; outline: 3px solid var(--go); outline-offset: 2px; border-radius: 10px; }
 .cardbtn.shake { animation: shake 0.3s linear; }

@@ -72,6 +72,20 @@ Die Blockade-Erkennung berücksichtigt den Schalter: eine gesperrte
 Schnellstapel-Karte, die in die Mitte passen würde, verhindert keine
 Blockade-Diagnose.
 
+## G10 — Früher Blockade-Abbruch vs. sichtbares Patt
+Das Heft beendet die Runde früh, wenn sich passende Karten in den Stapeln
+„verstecken" — aber der Host kann das aus den verdeckten Karten *beweisen*,
+die die Spieler nicht sehen. Ein Ende auf dieser verborgenen Kenntnis wirkt am
+Tisch willkürlich.
+**Default:** `earlyStalemate: false`. Die Runde endet dann von selbst nur bei
+echter **Blockade** — `isDeadlock()`, wenn kein Sitz überhaupt noch einen Zug
+hat (auch kein Umdrehen), rein aus sichtbarer Information. Beweisbar
+festgefahrene Stellungen (`isHardStalemate()`) enden weiterhin, aber erst nach
+einer kurzen Kulanzzeit, damit die Spieler es selbst merken — das bleibt auch
+die verpflichtende Livelock-Absicherung (G5/G7). Bloß langsames Spiel beendet
+nie eine Runde. **Alternative:** `true` = sofort bei `isHardStalemate()`
+beenden (altes Verhalten, am schnellsten, nutzt aber verdeckte Karten).
+
 ## Eindeutig geregelt (keine Schalter nötig)
 Reihengrößen 5/4/3 · Mitte: neuer Stapel nur mit 1, Aufbau +1 farbgleich,
 mehrere Stapel je Farbe · 3er-Handflip als Paket (oberste landet unten) ·

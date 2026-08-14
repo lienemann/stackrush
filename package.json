@@ -1,6 +1,6 @@
 {
   "name": "stackrush",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Real-time card race for 2-4 players. PWA-first, serverless multiplayer.",
   "type": "module",

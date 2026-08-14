@@ -8,37 +8,65 @@ import { clear, h, toast } from './dom.js';
 /** Home screen + lobby (docs/UI-DESIGN.md screen 1) — plain DOM builders. */
 
 export interface HomeCallbacks {
-  onPlayLocal(seatNames: string[]): void;
-  onHostOnline(seatNames: string[]): void;
+  onPlayLocal(seatNames: string[], botLevels: number[]): void;
+  onHostOnline(seatNames: string[], botLevels: number[]): void;
   onJoin(code: string, seatNames: string[]): void;
   onListen(seatNames: string[]): void; // acoustic pairing (joiner side)
   onLocale(locale: DeviceSettings['locale']): void;
   installPrompt: (() => void) | null;
 }
 
-function seatEditor(S: Strings, settings: DeviceSettings, onChange: (names: string[]) => void): HTMLElement {
+/**
+ * Combined seat roster: human seats on this device + computer players, capped
+ * at 4 total. Bots can be added right here so a solo player can set up a full
+ * table in one screen (they also remain addable later in the lobby).
+ */
+function rosterEditor(
+  S: Strings, settings: DeviceSettings,
+  onChange: (names: string[], bots: number[]) => void,
+): HTMLElement {
   const names = settings.seatNames.length > 0 ? [...settings.seatNames] : ['Player 1'];
+  const bots: number[] = [];
   const box = h('fieldset', {});
   box.append(h('legend', {}, S.seatsOnThisDevice));
   const list = h('div', { className: 'stack' });
+  const emit = () => onChange(names, bots);
+
   const render = () => {
     clear(list);
     names.forEach((name, i) => {
       const input = h('input', { value: name, maxlength: '14', 'aria-label': S.seatName });
-      input.addEventListener('input', () => { names[i] = input.value; onChange(names); });
-      const remove = h('button', { className: 'ghost', 'aria-label': '−', onclick: () => { names.splice(i, 1); onChange(names); render(); } }, '−');
-      list.append(h('div', { className: 'rowline' }, input, names.length > 1 ? remove : null));
+      input.addEventListener('input', () => { names[i] = input.value; emit(); });
+      const remove = h('button', { className: 'ghost', 'aria-label': '−',
+        onclick: () => { names.splice(i, 1); render(); emit(); } }, '−');
+      list.append(h('div', { className: 'rowline' }, input, names.length > 1 || bots.length ? remove : null));
     });
-    const seatButtons = h('div', { className: 'rowline' });
-    if (names.length < 4) {
-      seatButtons.append(h('button', {
-        onclick: () => { names.push(`Player ${names.length + 1}`); onChange(names); render(); },
+    bots.forEach((lvl, i) => {
+      list.append(h('div', { className: 'rowline' },
+        h('span', { className: 'playerchip', style: 'flex:1' },
+          h('span', { className: 'dot', style: `background:${OWNER_COLORS[names.length + i] ?? '#888'}` }),
+          h('span', {}, `🤖 ${S[`botL${(lvl as 1 | 2 | 3 | 4 | 5)}`]}`)),
+        h('button', { className: 'ghost', 'aria-label': '−',
+          onclick: () => { bots.splice(i, 1); render(); emit(); } }, '−'),
+      ));
+    });
+
+    const total = names.length + bots.length;
+    const controls = h('div', { className: 'rowline' });
+    if (total < 4) {
+      controls.append(h('button', {
+        onclick: () => { names.push(`Player ${names.length + 1}`); render(); emit(); },
       }, `+ ${S.seatName}`));
+      const level = h('select', { 'aria-label': S.difficulty, style: 'flex:1' });
+      ([1, 2, 3, 4, 5] as const).forEach(l => level.append(h('option', { value: String(l) }, S[`botL${l}`])));
+      level.value = '3';
+      controls.append(level,
+        h('button', { onclick: () => { bots.push(Number(level.value)); render(); emit(); } }, S.addBot));
     }
-    list.append(seatButtons);
+    list.append(controls);
   };
   render();
-  onChange(names);
+  emit();
   box.append(list);
   return box;
 }
@@ -46,6 +74,7 @@ function seatEditor(S: Strings, settings: DeviceSettings, onChange: (names: stri
 export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettings, cb: HomeCallbacks): void {
   clear(root);
   let seatNames: string[] = settings.seatNames.length > 0 ? settings.seatNames : ['Player 1'];
+  let botLevels: number[] = [];
 
   const title = h('h1', {});
   title.append('Stack', h('span', { className: 'accent' }, 'rush'));
@@ -64,13 +93,13 @@ export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettin
   root.append(h('div', { className: 'screen' },
     title,
     h('p', { className: 'tagline' }, S.tagline),
-    seatEditor(S, settings, names => { seatNames = names; }),
+    rosterEditor(S, settings, (names, bots) => { seatNames = names; botLevels = bots; }),
     h('div', { className: 'stack' },
       h('button', { className: 'primary', onclick: () => {
-        if (seatNames.length < 2) { toast(`${S.players}: 2–4`); return; }
-        cb.onPlayLocal(seatNames.map(n => n.trim() || '?'));
+        if (seatNames.length + botLevels.length < 2) { toast(`${S.players}: 2–4`); return; }
+        cb.onPlayLocal(seatNames.map(n => n.trim() || '?'), botLevels);
       } }, S.playLocal),
-      h('button', { onclick: () => cb.onHostOnline(seatNames.map(n => n.trim() || '?')) }, S.hostOnline),
+      h('button', { onclick: () => cb.onHostOnline(seatNames.map(n => n.trim() || '?'), botLevels) }, S.hostOnline),
       h('div', { className: 'rowline' },
         codeInput,
         h('button', { onclick: () => {
@@ -190,6 +219,7 @@ function configEditor(S: Strings, cfg: Config, onConfig: (patch: Partial<Config>
     check(S.quickToCenter, cfg.quickToCenter, v => onConfig({ quickToCenter: v })),
     check(S.roundEndModeCall, cfg.roundEndMode === 'call', v => onConfig({ roundEndMode: v ? 'call' : 'auto' })),
     check(S.shuffleOnRecycle, cfg.shuffleOnRecycle, v => onConfig({ shuffleOnRecycle: v })),
+    check(S.earlyStalemate, cfg.earlyStalemate, v => onConfig({ earlyStalemate: v })),
   );
   return box;
 }
@@ -202,8 +232,12 @@ function sheet(...children: Array<Node | string | null>): HTMLElement {
   return backdrop;
 }
 
-/** in-game settings sheet (gear): language, manual, about, leave */
-export function showGameMenu(S: Strings, settings: DeviceSettings, onLocale: (l: DeviceSettings['locale']) => void, onLeave: () => void): void {
+/** in-game settings sheet (gear): language, manual, about, debug log, leave */
+export function showGameMenu(
+  S: Strings, settings: DeviceSettings,
+  onLocale: (l: DeviceSettings['locale']) => void, onLeave: () => void,
+  onDownloadLog?: () => void,
+): void {
   const langSel = h('select', {});
   langSel.append(h('option', { value: 'auto' }, S.languageAuto));
   for (const loc of Object.keys(locales)) langSel.append(h('option', { value: loc }, loc.toUpperCase()));
@@ -213,6 +247,7 @@ export function showGameMenu(S: Strings, settings: DeviceSettings, onLocale: (l:
     h('label', { className: 'switch' }, h('span', {}, S.language), langSel),
     h('button', { onclick: () => { backdrop.remove(); showManual(S); } }, S.howToPlay),
     h('button', { onclick: () => { backdrop.remove(); showAbout(S); } }, S.about),
+    onDownloadLog ? h('button', { onclick: () => onDownloadLog() }, S.downloadLog) : null,
     h('button', { onclick: () => { backdrop.remove(); onLeave(); } }, S.leaveGame),
     h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
   );

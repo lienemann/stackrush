@@ -124,21 +124,36 @@ export class TableView {
     // quick pile, waste, hand stock (thumb row at the region's outer edge)
     const handRow = h('div', { className: 'hand-row' });
 
+    // the quick pile is only directly tappable when a rule actually lets a
+    // card leave it by tap (quick→center, or the pro buffer). Otherwise it
+    // drains automatically via row refills, so it is shown but inert — tapping
+    // it does nothing rather than flashing a confusing "doesn't fit" toast.
     const quickTop = p.quick[0];
+    const quickActionable = cfg.quickToCenter || cfg.proVariant;
     const quick = this.cardButton(`p${player}-quick`, quickTop
       ? cardFaceSVG(quickTop, { width: CARD_W + 8 })
       : slotSVG({ width: CARD_W + 8 }));
     quick.append(h('span', { className: 'count' }, t(this.S, 'quickLeft', { n: p.quick.length })));
-    quick.addEventListener('click', () => this.onTap(player, quickTop ? { kind: 'quick' } : null, `p${player}-quick`));
+    if (quickActionable)
+      quick.addEventListener('click', () => this.onTap(player, quickTop ? { kind: 'quick' } : null, `p${player}-quick`));
+    else
+      quick.classList.add('inert');
     handRow.append(quick);
 
-    // waste as a 3-card fan, like the flipped packet on the table: all three
-    // are visible, only the top (rightmost) card is playable
+    // waste as a fan of the last flipped packet: the playable card (waste[0])
+    // sits fully visible and on top at the LEFT, the cards under it peek out to
+    // the right, dimmed. Only the top card can be played; once it goes, the
+    // next is revealed (the cascade the rulebook allows).
     const wasteTop = p.waste[0];
     const waste = h('button', { className: 'cardbtn fan', 'data-k': `p${player}-waste` });
-    const fan = p.waste.slice(0, 3).reverse();
+    const fan = p.waste.slice(0, 3); // [playable, under, under]
     if (fan.length === 0) waste.append(fromHTML(slotSVG({ width: CARD_W })));
-    else for (const c of fan) waste.append(fromHTML(cardFaceSVG(c, { width: CARD_W })));
+    else fan.forEach((c, i) => {
+      const svg = fromHTML(cardFaceSVG(c, { width: CARD_W }));
+      svg.style.zIndex = String(fan.length - i); // leftmost (playable) on top
+      if (i === 0) svg.classList.add('top');
+      waste.append(svg);
+    });
     this.applyMarks(waste, `p${player}-waste`);
     waste.addEventListener('click', () => this.onTap(player, wasteTop ? { kind: 'waste' } : null, `p${player}-waste`));
     handRow.append(waste);
