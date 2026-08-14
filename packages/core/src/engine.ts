@@ -38,6 +38,7 @@ export function makeConfig(partial: Partial<Config> & { players: number }): Conf
     roundEndMode: 'auto',
     shuffleOnRecycle: true,
     quickToCenter: false,
+    earlyStalemate: false,
     ...partial,
   };
 }
@@ -295,6 +296,34 @@ function visibleCards(s: GameState, p: PlayerState): Card[] {
 
 export function anyVisibleCenterPlay(s: GameState): boolean {
   return s.players.some(p => visibleCards(s, p).some(c => centerFits(s, c)));
+}
+
+/** does this seat have any legal action at all right now? (visible info only) */
+function seatHasMove(s: GameState, p: PlayerState): boolean {
+  if (visibleCards(s, p).some(c => centerFits(s, c))) return true;
+  if (p.hand.length > 0 || p.waste.length > 0) return true;       // can always flip
+  if (s.config.roundEndMode === 'call' && p.quick.length === 0) return true; // callStop
+  if (!s.config.autoRefillRow && p.quick.length > 0 && p.row.some(st => st.length === 0)) return true;
+  if (s.config.proVariant) {
+    const movers = [p.quick[0], p.waste[0]].filter((c): c is Card => !!c);
+    for (const c of movers)
+      for (const stack of p.row) {
+        if (stack.length === 0 && s.config.proAllowEmptySlot) return true;
+        if (stack.length > 0 && proFits(s.config, c, stack[0])) return true;
+      }
+  }
+  return false;
+}
+
+/**
+ * True deadlock: no player can make ANY move whatsoever — not even flip the
+ * hand. Uses only what players can see (card counts + visible tops), never the
+ * hidden face-down contents, so ending here can never surprise anyone. This is
+ * always a safe stopping point regardless of the earlyStalemate setting.
+ */
+export function isDeadlock(s: GameState): boolean {
+  if (s.phase !== 'playing') return false;
+  return !s.players.some(p => seatHasMove(s, p));
 }
 
 /**

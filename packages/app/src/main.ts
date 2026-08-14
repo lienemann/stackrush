@@ -58,13 +58,22 @@ function attachClient(c: ClientSession, seatNames: string[]): void {
   c.hello(seatNames);
 }
 
-function playLocal(seatNames: string[]): void {
+/** add the bots configured on the home screen once the human seats register */
+function applyPendingBots(bots: number[]): void {
+  if (!host || bots.length === 0) return;
+  const h = host;
+  // defer past the hello round-trip so bots seat AFTER the humans (humans first)
+  setTimeout(() => bots.forEach(l => h.addBot(Math.max(1, Math.min(5, l)) as 1 | 2 | 3 | 4 | 5)), 0);
+}
+
+function playLocal(seatNames: string[], botLevels: number[] = []): void {
   const hub = new LoopbackHub();
   host = new HostSession({}, null, [hub.endpoint('host-net')]);
   attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey), seatNames);
+  applyPendingBots(botLevels);
 }
 
-async function hostOnline(seatNames: string[]): Promise<void> {
+async function hostOnline(seatNames: string[], botLevels: number[] = []): Promise<void> {
   const code = newRoomCode();
   const hub = new LoopbackHub();
   let transports: Transport[] = [hub.endpoint('host-net')];
@@ -76,6 +85,7 @@ async function hostOnline(seatNames: string[]): Promise<void> {
   }
   host = new HostSession({}, code, transports);
   attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey), seatNames);
+  applyPendingBots(botLevels);
 }
 
 async function join(code: string, seatNames: string[]): Promise<void> {
@@ -168,8 +178,8 @@ function render(): void {
     case 'home':
       setWakeLock(false);
       renderHome(root, S, settings, {
-        onPlayLocal: playLocal,
-        onHostOnline: n => void hostOnline(n),
+        onPlayLocal: (n, bots) => playLocal(n, bots),
+        onHostOnline: (n, bots) => void hostOnline(n, bots),
         onJoin: (code, n) => void join(code, n),
         onListen: n => void listenForCode(n),
         onLocale: setLocale,
@@ -205,7 +215,7 @@ function render(): void {
             rematch: () => host!.rematch(),
             backToLobby: () => { table = null; screen = 'lobby'; host!.backToLobby(); },
           } : null,
-          () => showGameMenu(S, settings, setLocale, leave));
+          () => showGameMenu(S, settings, setLocale, leave, host ? downloadDebugLog : undefined));
       }
       table.setStrings(S);
       table.render();
@@ -218,6 +228,22 @@ function render(): void {
       return;
     }
   }
+}
+
+/** save the host's JSONL debug log to a file (host device only) */
+function downloadDebugLog(): void {
+  if (!host) return;
+  const blob = new Blob([host.debugLogJSONL()], { type: 'application/x-ndjson' });
+  const url = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `stackrush-debug-${stamp}.jsonl`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(S.downloadLog);
 }
 
 function setLocale(locale: DeviceSettings['locale']): void {

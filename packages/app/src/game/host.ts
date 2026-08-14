@@ -1,6 +1,6 @@
 import {
   Action, BotLevel, Config, GameState, Rejection, apply, botReactionMs, chooseBotAction,
-  isHardStalemate, makeConfig, newGame,
+  isDeadlock, isHardStalemate, makeConfig, newGame,
 } from '@stackrush/core';
 import { Arbiter, PeerId, Transport, decodeMsg, encodeMsg } from '@stackrush/net';
 import { ClientMsg, HostMsg, LobbyState } from './protocol.js';
@@ -15,8 +15,15 @@ import { ClientMsg, HostMsg, LobbyState } from './protocol.js';
 const PING_INTERVAL_MS = 2000;
 const WATCHDOG_INTERVAL_MS = 1000;
 const BOT_TICK_MS = 60;
-/** G5/G7: mandatory inactivity timeout — a livelock is reachable by rule */
-const STALEMATE_TIMEOUT_MS = 10_000;
+/**
+ * When earlyStalemate is OFF and a position is provably stuck (isHardStalemate)
+ * but not yet a true deadlock, wait this long before ending — long enough for
+ * players to flip through and see for themselves, and the mandatory backstop
+ * for the shuffleOnRecycle=false livelock (docs/RULES-GAPS G5/G7). Slow-but-
+ * playable positions never end on their own.
+ */
+const STUCK_GRACE_MS = 12_000;
+const DEBUG_LOG_CAP = 6000;
 
 interface PeerRef { transport: Transport; peer: PeerId }
 
@@ -44,6 +51,7 @@ export class HostSession {
   private botTimer: ReturnType<typeof setInterval> | null = null;
   private bots = new Map<number, BotState>(); // player index -> bot driver state
   private botSeq = 0;
+  private dbg: string[] = []; // JSONL debug ring buffer
   private pings = new Map<number, { deviceKey: string; sentAt: number }>();
   private pingSeq = 0;
   private lastAcceptedAt = performance.now();
@@ -168,12 +176,19 @@ export class HostSession {
     this.state = newGame(this.lobby.config, this.seed());
     this.version = 1;
     this.lastAcceptedAt = performance.now();
+    this.stuckSince = null;
+    this.logLine('start', {
+      config: this.lobby.config,
+      players: this.lobby.players.map(p => ({ name: p.name, bot: p.bot ?? null })),
+    });
     this.broadcastLobby();
     this.sendState();
   }
 
   nextRound(): void {
     if (!this.state || this.state.phase !== 'roundEnded') return;
+    this.stuckSince = null;
+    this.logLine('nextRound');
     this.applyDirect({ type: 'startNextRound', seed: this.seed() });
   }
 
@@ -182,6 +197,8 @@ export class HostSession {
     this.state = newGame(this.lobby.config, this.seed());
     this.version++;
     this.lastAcceptedAt = performance.now();
+    this.stuckSince = null;
+    this.logLine('rematch');
     this.sendState();
   }
 
@@ -200,6 +217,9 @@ export class HostSession {
     if (!this.state) return;
     const res = apply(this.state, action);
     if (res.ok) {
+      const ended = res.events.find(e => e.type === 'roundEnded');
+      if (ended && ended.type === 'roundEnded')
+        this.logLine('roundEnd', { by: ended.by, scores: ended.scores, action: action.type });
       this.state = res.state;
       this.version++;
       this.lastAcceptedAt = performance.now();
@@ -238,8 +258,10 @@ export class HostSession {
         this.version++;
         anyAccepted = true;
         acceptedIds.push(id);
+        this.logLine('accept', { by: deviceKey, action: intent.action, reactionMs: Math.round(intent.reactionMs), events: res.events.map(e => e.type) });
       } else {
         rejects.push({ deviceKey, id, reason: res.reason });
+        this.logLine('reject', { by: deviceKey, action: intent.action, reason: res.reason });
       }
     }
     if (anyAccepted) {
@@ -255,14 +277,67 @@ export class HostSession {
     this.scheduleFlush();
   }
 
-  // ---------- stalemate watchdog (G7) ----------
+  // ---------- stalemate watchdog (G7/G10) ----------
 
+  private stuckSince: number | null = null;
+
+  /**
+   * A round ends by itself only when it is genuinely over — NOT merely because
+   * players are deliberating. A true deadlock (nobody can even flip) ends at
+   * once. A position the host can prove is stuck (isHardStalemate, using hidden
+   * cards) ends immediately when earlyStalemate is on, otherwise only after a
+   * grace period so players discover it themselves (and as the mandatory
+   * livelock backstop). Slow-but-playable positions never trigger an end.
+   */
   private checkStalemate(): void {
     if (!this.state || this.state.phase !== 'playing') return;
-    const inactive = performance.now() - this.lastAcceptedAt > STALEMATE_TIMEOUT_MS;
-    if (inactive || isHardStalemate(this.state)) {
+    const now = performance.now();
+    if (isDeadlock(this.state)) {
+      this.logLine('stalemate', { why: 'deadlock', snapshot: this.snapshot() });
       this.applyDirect({ type: 'endRoundStalemate' });
+      return;
     }
+    if (isHardStalemate(this.state)) {
+      if (this.state.config.earlyStalemate) {
+        this.logLine('stalemate', { why: 'earlyHard', snapshot: this.snapshot() });
+        this.applyDirect({ type: 'endRoundStalemate' });
+        return;
+      }
+      this.stuckSince ??= now;
+      if (now - this.stuckSince > STUCK_GRACE_MS) {
+        this.logLine('stalemate', { why: 'grace', stuckMs: Math.round(now - this.stuckSince), snapshot: this.snapshot() });
+        this.applyDirect({ type: 'endRoundStalemate' });
+      }
+      return;
+    }
+    this.stuckSince = null; // playable again
+  }
+
+  // ---------- debug log (JSONL) ----------
+
+  private logLine(kind: string, data: Record<string, unknown> = {}): void {
+    this.dbg.push(JSON.stringify({ t: Math.round(performance.now()), v: this.version, round: this.state?.round, kind, ...data }));
+    if (this.dbg.length > DEBUG_LOG_CAP) this.dbg.shift();
+  }
+
+  /** compact, spoiler-free-per-line snapshot for diagnosing round ends */
+  private snapshot(): unknown {
+    if (!this.state) return null;
+    return {
+      earlyStalemate: this.state.config.earlyStalemate,
+      quickToCenter: this.state.config.quickToCenter,
+      center: this.state.center.map(p => ({ color: p.color, height: p.height })),
+      players: this.state.players.map(p => ({
+        rowTops: p.row.map(st => st[0] ? `${st[0].color}:${st[0].value}` : null),
+        quick: p.quick.length, hand: p.hand.length, waste: p.waste.length,
+        wasteTop: p.waste[0] ? `${p.waste[0].color}:${p.waste[0].value}` : null,
+      })),
+    };
+  }
+
+  /** the whole session log as JSONL text (for the download button) */
+  debugLogJSONL(): string {
+    return this.dbg.join('\n') + (this.dbg.length ? '\n' : '');
   }
 
   // ---------- IO ----------

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newGame, makeConfig, apply, scoreRound, matchWinners,
-  anyVisibleCenterPlay, isHardStalemate, defaultRowSize,
+  anyVisibleCenterPlay, isDeadlock, isHardStalemate, defaultRowSize,
 } from '../src/engine.js';
 import { Card, GameState } from '../src/types.js';
 
@@ -320,6 +320,42 @@ test('stalemate: detection + host ends round with scoring', () => {
   assert.ok(r.ok); g = r.ok ? r.state : g;
   assert.equal(g.phase, 'roundEnded');
   assert.equal(g.roundEndedBy, -1);
+});
+
+test('isDeadlock: true only when no seat can make any move (not even flip)', () => {
+  // provably stuck by hidden knowledge, but players can still flip -> NOT a deadlock
+  const stuck = rig(s => {
+    s.center = [{ color: 0, height: 10, owners: new Array(10).fill(0) }];
+    for (const p of s.players) {
+      p.row = p.row.map(() => [card(1, 9, 0)]);
+      p.quick = [card(2, 9, 0)];
+      p.hand = [card(3, 9, 0)];         // <- can still flip
+      p.waste = [];
+    }
+  });
+  assert.equal(isHardStalemate(stuck), true);
+  assert.equal(isDeadlock(stuck), false, 'flipping is still a move');
+
+  // now empty every hand and waste: nobody can move at all -> deadlock
+  const dead = rig(s => {
+    s.center = [{ color: 0, height: 10, owners: new Array(10).fill(0) }];
+    for (const p of s.players) {
+      p.row = p.row.map(() => [card(1, 9, 0)]); // 9s, nothing fits a full pile
+      p.quick = [card(2, 9, 0)];
+      p.hand = []; p.waste = [];
+    }
+  });
+  assert.equal(isDeadlock(dead), true);
+  assert.equal(anyVisibleCenterPlay(dead), false);
+});
+
+test('isDeadlock: a visible playable card means not deadlocked', () => {
+  const g = rig(s => {
+    s.center = [{ color: 0, height: 1, owners: [0] }];
+    for (const p of s.players) { p.row = p.row.map(() => [card(1, 9, 0)]); p.quick = []; p.hand = []; p.waste = []; }
+    s.players[0].row[0] = [card(0, 2, 0)];  // fits pile 0
+  });
+  assert.equal(isDeadlock(g), false);
 });
 
 test('fuzz: 2000 random legal/illegal actions never crash, cards conserved', () => {

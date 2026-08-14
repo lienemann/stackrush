@@ -56,6 +56,42 @@ test('flipHand goes through the arbiter window and broadcasts a new version', as
   host.close();
 });
 
+test('watchdog: slow deliberation does NOT end the round (no false stalemate)', async () => {
+  const hub = new LoopbackHub();
+  const host = new HostSession({}, 'SLOW1', [hub.endpoint('host-net')]);
+  const a = new ClientSession(hub.endpoint('devA'), 'devA');
+  const b = new ClientSession(hub.endpoint('devB'), 'devB');
+  a.hello(['A']); b.hello(['B']);
+  await until(() => (a.lobby?.players.length ?? 0) === 2);
+  host.start();
+  await until(() => a.displayState() !== null);
+  assert.equal(a.displayState()!.phase, 'playing');
+  // sit idle well past the old 10s-style inactivity window (scaled down: the
+  // watchdog no longer ends on inactivity at all, only on a real stuck position)
+  await wait(1500);
+  // a fresh deal is never a stalemate, so the round must still be running
+  assert.equal(a.displayState()!.phase, 'playing', 'round ended despite legal moves remaining');
+  host.close();
+});
+
+test('debug log: records start and accepted actions as JSONL', async () => {
+  const hub = new LoopbackHub();
+  const host = new HostSession({ quickToCenter: true }, 'LOG01', [hub.endpoint('host-net')]);
+  const a = new ClientSession(hub.endpoint('devA'), 'devA');
+  a.hello(['A']);
+  const b = new ClientSession(hub.endpoint('devB'), 'devB');
+  b.hello(['B']);
+  await until(() => (a.lobby?.players.length ?? 0) === 2);
+  host.start();
+  await until(() => a.displayState() !== null);
+  a.submit({ type: 'flipHand', player: 0 });
+  await until(() => a.version >= 2);
+  const lines = host.debugLogJSONL().trim().split('\n').map(l => JSON.parse(l));
+  assert.ok(lines.some(l => l.kind === 'start'), 'has a start line');
+  assert.ok(lines.some(l => l.kind === 'accept' && l.action?.type === 'flipHand'), 'logged the flip');
+  host.close();
+});
+
 test('computer player: host drives a bot seat with no human input', async () => {
   const hub = new LoopbackHub();
   const host = new HostSession({ quickToCenter: true }, 'BOT01', [hub.endpoint('host-net')]);

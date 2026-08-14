@@ -56,6 +56,15 @@ export interface Config {
    * through row refills. Default: false (stricter house reading).
    */
   quickToCenter: boolean;
+  /**
+   * G10: may the host end a round *early* using its full (hidden-card)
+   * knowledge — i.e. as soon as it can prove no reachable card will ever fit
+   * (isHardStalemate)? Players don't see the face-down piles, so an early end
+   * can feel arbitrary. false = end only on a real deadlock (no move at all)
+   * or, for provably-stuck positions, after a short grace so players discover
+   * it themselves. Default: false.
+   */
+  earlyStalemate: boolean;
 }
 
 export type Phase = 'playing' | 'roundEnded' | 'matchEnded';
