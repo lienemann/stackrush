@@ -81,4 +81,5 @@ through the same Arbiter window.
 3. Table renderer (SVG cards, own design), seat regions, tap-to-play with
    target highlighting; optimistic layer with rollback.
 4. Settings screen wiring all `Config` switches + language (auto/en/de).
-5. Wake lock, offline SW, install prompt; Netlify deploy.
+5. Wake lock, offline SW, install prompt; GitHub Pages deploy
+   (.github/workflows/deploy.yml, base path `/stackrush/`).

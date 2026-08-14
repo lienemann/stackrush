@@ -1,3 +1,8 @@
 node_modules/
 dist/
 *.log
+# generated at build time by scripts/gen-icons.mjs (npm run icons)
+packages/app/public/icons/
+packages/app/public/favicon.svg
+# not committed: CI resolves fresh (npm install, see .github/workflows)
+package-lock.json
