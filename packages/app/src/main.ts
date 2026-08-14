@@ -189,6 +189,8 @@ function render(): void {
         onStart: () => host?.start(),
         onConfig: patch => host?.updateConfig(patch),
         onBeacon: () => void beaconCode(),
+        onAddBot: level => host?.addBot(Math.max(1, Math.min(5, level)) as 1 | 2 | 3 | 4 | 5),
+        onRemovePlayer: i => host?.removePlayer(i),
         onLeave: leave,
       });
       return;

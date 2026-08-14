@@ -97,6 +97,8 @@ export interface LobbyCallbacks {
   onStart(): void;
   onConfig(patch: Partial<Config>): void;
   onBeacon(): void; // acoustic room-code beacon (host)
+  onAddBot(level: number): void;
+  onRemovePlayer(index: number): void;
   onLeave(): void;
 }
 
@@ -121,12 +123,27 @@ export function renderLobby(root: HTMLElement, S: Strings, lobby: LobbyState, cb
 
   const list = h('div', { className: 'playerlist' });
   lobby.players.forEach((p, i) => {
+    const removable = cb.isHost && p.bot !== undefined && !lobby.started;
     list.append(h('div', { className: `playerchip${p.connected ? '' : ' off'}` },
       h('span', { className: 'dot', style: `background:${OWNER_COLORS[i]}` }),
-      h('span', {}, p.name),
+      h('span', { style: 'flex:1' }, p.name),
+      removable ? h('button', { className: 'ghost', 'aria-label': '−', style: 'min-height:32px;padding:2px 12px',
+        onclick: () => cb.onRemovePlayer(i) }, '−') : null,
     ));
   });
   screen.append(h('fieldset', {}, h('legend', {}, S.players), list));
+
+  if (cb.isHost && lobby.players.length < 4) {
+    const level = h('select', { style: 'flex:1' });
+    ([1, 2, 3, 4, 5] as const).forEach(l =>
+      level.append(h('option', { value: String(l) }, S[`botL${l}` as const])));
+    level.value = '3';
+    screen.append(h('div', { className: 'rowline', style: 'width:min(420px,100%)' },
+      h('label', { style: 'flex:none;color:var(--dim)' }, S.difficulty),
+      level,
+      h('button', { onclick: () => cb.onAddBot(Number(level.value)) }, S.addBot),
+    ));
+  }
 
   if (cb.isHost) {
     screen.append(configEditor(S, lobby.config, cb.onConfig));

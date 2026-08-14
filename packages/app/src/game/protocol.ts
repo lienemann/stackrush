@@ -8,9 +8,11 @@ import type { Action, Config, GameState, Rejection } from '@stackrush/core';
 
 export interface LobbyPlayer {
   name: string;
-  /** stable id of the owning device ('host' for the host device) */
+  /** stable id of the owning device ('host' for the host device, 'bot' for AI) */
   deviceKey: string;
   connected: boolean;
+  /** difficulty 1..5 if this seat is a computer player, else undefined */
+  bot?: number;
 }
 
 export interface LobbyState {

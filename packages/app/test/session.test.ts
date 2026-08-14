@@ -56,6 +56,29 @@ test('flipHand goes through the arbiter window and broadcasts a new version', as
   host.close();
 });
 
+test('computer player: host drives a bot seat with no human input', async () => {
+  const hub = new LoopbackHub();
+  const host = new HostSession({ quickToCenter: true }, 'BOT01', [hub.endpoint('host-net')]);
+  const human = new ClientSession(hub.endpoint('devA'), 'devA');
+  human.hello(['Human']);
+  await until(() => (human.lobby?.players.length ?? 0) === 1);
+  host.addBot(5); // fast, skilled -> acts quickly
+  await until(() => (human.lobby?.players.length ?? 0) === 2);
+  assert.equal(human.lobby!.players[1].bot, 5);
+  host.start();
+  await until(() => human.displayState() !== null);
+  const startVersion = human.version;
+  const botQuick0 = human.displayState()!.players[1].quick.length;
+  // the bot should tap on its own within a couple of reaction cycles
+  await until(() => human.version > startVersion + 2, 4000);
+  const s = human.displayState()!;
+  const botProgressed = s.players[1].quick.length < botQuick0 ||
+    s.center.some(pile => pile.owners.includes(1)) ||
+    s.players[1].waste.length > 0; // at least flipped its hand
+  assert.ok(botProgressed, 'bot took actions that changed its own area');
+  host.close();
+});
+
 test('race on the same pile: faster reactionMs wins, loser rolls back', async () => {
   // find a deal where p0 can open a pile with a 1 and BOTH players then hold
   // a visible 2 of that color (deterministic search over seeds)
