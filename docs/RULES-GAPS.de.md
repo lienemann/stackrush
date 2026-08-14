@@ -59,6 +59,19 @@ Tap-Timestamps (siehe README-Tabelle); Aktionen nach Rundenende werden mit
 Stop *gesendet* wurden, noch zu werten) ist Host-Policy, nicht Engine-Logik —
 bewusst draußen gehalten, damit die Engine deterministisch bleibt.
 
+## G9 — Schnellstapel direkt in die Mitte?
+**Text:** die Ablege-Optionen nennen die oberste Karte des Schnellstapels
+(Ligretto-Stapels) als spielbar, und der Spielende-Absatz erwähnt die letzte
+Karte „egal ob in die Mitte oder in die Reihe" — das Heft erlaubt den direkten
+Mittelzug also. Verbreitete Tischpraxis ist strenger: Der Stapel leert sich
+nur über das Nachrücken in die Reihe, die damit der einzige taktische
+Engpass bleibt.
+**Default:** `quickToCenter: false` (strengere Hauslesart, Wunsch des
+Tisches, für den diese App entsteht). **Alternative:** `true` = Heftlesart.
+Die Blockade-Erkennung berücksichtigt den Schalter: eine gesperrte
+Schnellstapel-Karte, die in die Mitte passen würde, verhindert keine
+Blockade-Diagnose.
+
 ## Eindeutig geregelt (keine Schalter nötig)
 Reihengrößen 5/4/3 · Mitte: neuer Stapel nur mit 1, Aufbau +1 farbgleich,
 mehrere Stapel je Farbe · 3er-Handflip als Paket (oberste landet unten) ·

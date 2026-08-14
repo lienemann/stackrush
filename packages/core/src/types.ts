@@ -50,6 +50,12 @@ export interface Config {
   roundEndMode: 'auto' | 'call';
   /** G5: shuffle waste on recycle (rulebook) or just flip it over (house rule) */
   shuffleOnRecycle: boolean;
+  /**
+   * G9: may the quick pile's top card be played straight to the center?
+   * The 2017 booklet allows it; common table practice drains the pile only
+   * through row refills. Default: false (stricter house reading).
+   */
+  quickToCenter: boolean;
 }
 
 export type Phase = 'playing' | 'roundEnded' | 'matchEnded';
@@ -84,7 +90,7 @@ export type Rejection =
   | 'wrongColor' | 'wrongValue' | 'needValueOne' | 'noSuchPile'
   | 'notProVariant' | 'emptySlotForbidden' | 'handEmpty'
   | 'autoRefillActive' | 'slotNotEmpty' | 'quickEmpty'
-  | 'wrongMode' | 'quickNotEmpty';
+  | 'wrongMode' | 'quickNotEmpty' | 'quickLocked';
 
 export type Result =
   | { ok: true; state: GameState; events: Event[] }

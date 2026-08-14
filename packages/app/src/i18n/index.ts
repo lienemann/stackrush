@@ -29,6 +29,12 @@ export const en = {
   score: 'Score',
   youScored: '{points} points',
   roundEndedBy: '{name} ended the round',
+  stoppedBy: '{name} emptied the quick pile — Stop!',
+  winByPoints: 'Most points after {n} rounds',
+  colCenter: 'Center',
+  colQuick: 'Quick pile',
+  colRound: 'Round',
+  colTotal: 'Total',
   stalemate: 'No moves left — round ended',
   matchWinner: 'Winner: {name}',
   matchWinners: 'Winners: {names}',
@@ -50,6 +56,7 @@ export const en = {
   proStepOne: 'exactly −1',
   proAllowEmptySlot: 'Buffer onto empty slots allowed',
   autoRefillRow: 'Refill row automatically',
+  quickToCenter: 'Quick pile may play straight to the center',
   roundEndModeCall: 'Round ends only when Stop is called',
   shuffleOnRecycle: 'Shuffle waste when recycling (rulebook)',
   connectionLost: 'Connection to {name} lost. Waiting to reconnect…',
@@ -77,8 +84,8 @@ A pile is opened with a 1 and grows strictly in order: 2, 3, 4 … up to 10, alw
 
 YOUR AREA
 · Row: face-up cards in front of you. When you play one away, the gap is filled from your quick pile.
-· Quick pile: your countdown. Only the top card is playable. Get rid of all of it!
-· Hand stock: flip three cards at a time onto your waste pile; only the top waste card is playable. When the stock runs out, the waste is turned over (and shuffled, by default) and you keep flipping.
+· Quick pile: your countdown. It drains by refilling the gaps in your row — get rid of all of it! (A rule switch in the settings also allows playing its top card straight to the center.)
+· Hand stock: flip three cards at a time onto your waste fan. All three flipped cards stay visible, but only the top one is playable. When the stock runs out, the waste is turned over (and shuffled, by default) and you keep flipping.
 
 PLAYING A CARD
 Tap a card: if it fits exactly one place, it flies there immediately. With several options, the legal targets light up — tap one. If someone beats you to the pile, your card snaps back: that is a lost race, not a mistake.
@@ -124,6 +131,12 @@ export const de: Strings = {
   score: 'Punkte',
   youScored: '{points} Punkte',
   roundEndedBy: '{name} hat die Runde beendet',
+  stoppedBy: '{name} hat den Schnellstapel geleert — Stopp!',
+  winByPoints: 'Meiste Punkte nach {n} Runden',
+  colCenter: 'Mitte',
+  colQuick: 'Schnellstapel',
+  colRound: 'Runde',
+  colTotal: 'Gesamt',
   stalemate: 'Keine Züge mehr möglich — Runde beendet',
   matchWinner: 'Sieger: {name}',
   matchWinners: 'Sieger: {names}',
@@ -145,6 +158,7 @@ export const de: Strings = {
   proStepOne: 'genau −1',
   proAllowEmptySlot: 'Puffer auf leere Plätze erlaubt',
   autoRefillRow: 'Reihe automatisch auffüllen',
+  quickToCenter: 'Schnellstapel darf direkt in die Mitte',
   roundEndModeCall: 'Runde endet erst durch Stopp-Ruf',
   shuffleOnRecycle: 'Ablage beim Aufnehmen mischen (Regelheft)',
   connectionLost: 'Verbindung zu {name} verloren. Warte auf Wiederverbindung…',
@@ -172,8 +186,8 @@ Ein Stapel wird mit einer 1 eröffnet und wächst streng der Reihe nach: 2, 3, 4
 
 DEIN BEREICH
 · Reihe: offene Karten vor dir. Spielst du eine weg, rückt eine Karte vom Schnellstapel nach.
-· Schnellstapel: dein Countdown. Nur die oberste Karte ist spielbar. Werde alle los!
-· Handstapel: decke immer drei Karten auf deinen Ablagestapel auf; nur die oberste Ablagekarte ist spielbar. Ist der Handstapel leer, wird die Ablage umgedreht (standardmäßig gemischt) und es geht weiter.
+· Schnellstapel: dein Countdown. Er leert sich, indem er die Lücken deiner Reihe auffüllt — werde alle Karten los! (Ein Regelschalter in den Einstellungen erlaubt zusätzlich, die oberste Karte direkt in die Mitte zu spielen.)
+· Handstapel: decke immer drei Karten auf deinen Ablagefächer auf. Alle drei aufgedeckten Karten bleiben sichtbar, spielbar ist nur die oberste. Ist der Handstapel leer, wird die Ablage umgedreht (standardmäßig gemischt) und es geht weiter.
 
 EINE KARTE SPIELEN
 Tippe eine Karte an: passt sie an genau eine Stelle, fliegt sie sofort dorthin. Bei mehreren Möglichkeiten leuchten die gültigen Ziele auf — tippe eines an. Ist dir jemand zuvorgekommen, schnappt die Karte zurück: ein verlorenes Rennen, kein Fehler.

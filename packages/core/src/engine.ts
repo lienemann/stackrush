@@ -37,6 +37,7 @@ export function makeConfig(partial: Partial<Config> & { players: number }): Conf
     autoRefillRow: true,
     roundEndMode: 'auto',
     shuffleOnRecycle: true,
+    quickToCenter: false,
     ...partial,
   };
 }
@@ -182,6 +183,8 @@ export function apply(state: GameState, action: Action): Result {
       if (action.source.kind === 'row' &&
           (action.source.slot < 0 || action.source.slot >= p.row.length))
         return { ok: false, reason: 'badSlot' };
+      if (action.source.kind === 'quick' && !s.config.quickToCenter)
+        return { ok: false, reason: 'quickLocked' };   // G9
       const card = peek(p, action.source);
       if (!card) return { ok: false, reason: 'emptySource' };
 
@@ -281,16 +284,17 @@ function centerFits(s: GameState, c: Card): boolean {
     s.center.some(pl => pl.color === c.color && pl.height + 1 === c.value && pl.height < MAX_VALUE);
 }
 
-function visibleCards(p: PlayerState): Card[] {
+/** cards that could legally move to the center right now (G9-aware) */
+function visibleCards(s: GameState, p: PlayerState): Card[] {
   return [
     ...p.row.map(st => st[0]).filter((c): c is Card => !!c),
-    ...(p.quick[0] ? [p.quick[0]] : []),
+    ...(s.config.quickToCenter && p.quick[0] ? [p.quick[0]] : []),
     ...(p.waste[0] ? [p.waste[0]] : []),
   ];
 }
 
 export function anyVisibleCenterPlay(s: GameState): boolean {
-  return s.players.some(p => visibleCards(p).some(c => centerFits(s, c)));
+  return s.players.some(p => visibleCards(s, p).some(c => centerFits(s, c)));
 }
 
 /**
@@ -306,6 +310,13 @@ export function isHardStalemate(s: GameState): boolean {
   if (anyVisibleCenterPlay(s)) return false;
   for (const p of s.players) {
     if ([...p.hand, ...p.waste].some(c => centerFits(s, c))) return false;
+    // manual refill (G1): filling an empty slot uncovers quick cards and can
+    // route the quick pile onto the table even when quickToCenter is off
+    if (!s.config.autoRefillRow && p.quick.length > 0 &&
+        p.row.some(st => st.length === 0)) return false;
+    // quickToCenter off (G9): a quick card that fits the center still counts
+    // as reachable if a row slot could open for it — covered above by the
+    // visible-play check (a play frees a slot) and the manual-refill check.
     if (s.config.proVariant) {
       const movers = [p.quick[0], p.waste[0]].filter((c): c is Card => !!c);
       for (const c of movers)

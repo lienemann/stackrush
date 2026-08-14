@@ -33,8 +33,9 @@ veröffentlicht: **https://lienemann.github.io/stackrush/**
 
 ## Regel-Lücken
 
-8 unterspezifizierte Stellen der Anleitung, dokumentiert in
-`docs/RULES-GAPS.de.md`, alle per `Config` schaltbar.
+9 unterspezifizierte bzw. hausregelbare Stellen der Anleitung, dokumentiert
+in `docs/RULES-GAPS.de.md`, alle per `Config` schaltbar (u. a. G9:
+Schnellstapel direkt in die Mitte an/aus, Standard: aus).
 
 ## Fairness / Latenz
 

@@ -170,6 +170,7 @@ function configEditor(S: Strings, cfg: Config, onConfig: (patch: Partial<Config>
   box.append(
     check(S.proAllowEmptySlot, cfg.proAllowEmptySlot, v => onConfig({ proAllowEmptySlot: v })),
     check(S.autoRefillRow, cfg.autoRefillRow, v => onConfig({ autoRefillRow: v })),
+    check(S.quickToCenter, cfg.quickToCenter, v => onConfig({ quickToCenter: v })),
     check(S.roundEndModeCall, cfg.roundEndMode === 'call', v => onConfig({ roundEndMode: v ? 'call' : 'auto' })),
     check(S.shuffleOnRecycle, cfg.shuffleOnRecycle, v => onConfig({ shuffleOnRecycle: v })),
   );

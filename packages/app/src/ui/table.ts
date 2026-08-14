@@ -132,10 +132,14 @@ export class TableView {
     quick.addEventListener('click', () => this.onTap(player, quickTop ? { kind: 'quick' } : null, `p${player}-quick`));
     handRow.append(quick);
 
+    // waste as a 3-card fan, like the flipped packet on the table: all three
+    // are visible, only the top (rightmost) card is playable
     const wasteTop = p.waste[0];
-    const waste = this.cardButton(`p${player}-waste`, wasteTop
-      ? cardFaceSVG(wasteTop, { width: CARD_W })
-      : slotSVG({ width: CARD_W }));
+    const waste = h('button', { className: 'cardbtn fan', 'data-k': `p${player}-waste` });
+    const fan = p.waste.slice(0, 3).reverse();
+    if (fan.length === 0) waste.append(fromHTML(slotSVG({ width: CARD_W })));
+    else for (const c of fan) waste.append(fromHTML(cardFaceSVG(c, { width: CARD_W })));
+    this.applyMarks(waste, `p${player}-waste`);
     waste.addEventListener('click', () => this.onTap(player, wasteTop ? { kind: 'waste' } : null, `p${player}-waste`));
     handRow.append(waste);
 
@@ -166,9 +170,13 @@ export class TableView {
   private cardButton(key: string, svg: string): HTMLButtonElement {
     const btn = h('button', { className: 'cardbtn', 'data-k': key });
     btn.append(fromHTML(svg));
+    this.applyMarks(btn, key);
+    return btn;
+  }
+
+  private applyMarks(btn: HTMLElement, key: string): void {
     if (this.selected?.sourceKey === key) btn.classList.add('selected');
     if (this.selected?.targets.some(tg => tg.key === key)) btn.classList.add('target');
-    return btn;
   }
 
   // ---------- center strip ----------

@@ -5,7 +5,7 @@ function legalCenterActions(g: GameState, player: number): Action[] {
   const p = g.players[player];
   const srcs: Source[] = [
     ...p.row.map((st, slot) => st.length ? [{ kind: 'row', slot } as Source] : []).flat(),
-    ...(p.quick[0] ? [{ kind: 'quick' } as Source] : []),
+    ...(g.config.quickToCenter && p.quick[0] ? [{ kind: 'quick' } as Source] : []),
     ...(p.waste[0] ? [{ kind: 'waste' } as Source] : []),
   ];
   const acts: Action[] = [];
@@ -24,7 +24,8 @@ for (let match = 0; match < 60; match++) {
   let g = newGame(makeConfig({ players: 2 + (match % 3), targetRounds: 3,
     proVariant: match % 2 === 0, proDescendingStep: match % 4 < 2 ? 'any' : 'one',
     roundEndMode: match % 5 === 0 ? 'call' : 'auto',
-    shuffleOnRecycle: match % 3 !== 0, autoRefillRow: match % 7 !== 0 }), match);
+    shuffleOnRecycle: match % 3 !== 0, autoRefillRow: match % 7 !== 0,
+    quickToCenter: match % 6 < 3 }), match);
   let n = 0; let lastRound = 1; let roundStart = 0;
   while (g.phase !== 'matchEnded' && n < 30000) {
     n++;

@@ -57,6 +57,17 @@ reaction timestamps (README table); actions after round end are rejected with
 stop) is host policy, not engine logic — deliberately kept out so the engine
 stays deterministic.
 
+## G9 — Quick pile directly into the center?
+**Text:** the play options list the top card of the quick (Ligretto) pile as
+playable, and the game-end paragraph mentions the last card leaving "into the
+middle or into the row" — so the booklet allows a direct center play. Common
+table practice is stricter: the pile drains only through row refills, which
+keeps the row as the single tactical bottleneck.
+**Default:** `quickToCenter: false` (stricter house reading, as requested by
+the table this app is built for). **Alternative:** `true` = booklet reading.
+The stalemate detector accounts for the switch: a locked quick card that
+would fit the center does not block a stalemate diagnosis.
+
 ## Unambiguous (no switches needed)
 Row sizes 5/4/3 · center: new pile only with a 1, build-up +1 same color,
 multiple piles per color · flip of 3 as a packet (former top ends up at the

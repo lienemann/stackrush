@@ -119,6 +119,7 @@ test('scoring: +1 per card in center, −2 per card left in quick pile', () => {
 test('match: round ends via last quick-pile card, totals, winners', () => {
   let g = rig(s => {
     s.config.targetRounds = 2;
+    s.config.quickToCenter = true;                       // G9: rulebook mode
     s.players[0].quick = [card(0, 1)];
     s.center = [];
   });
@@ -167,6 +168,7 @@ test('pro variant: descending + color change onto row, else rejected', () => {
 test('G2 call mode: empty quick pile does not end round, callStop does', () => {
   let g = rig(s => {
     s.config.roundEndMode = 'call'; s.config.targetRounds = 3;
+    s.config.quickToCenter = true;
     s.players[0].quick = [card(0, 1)];
   });
   let r = apply(g, { type: 'playToCenter', player: 0, source: { kind: 'quick' }, pile: 'new' });
@@ -212,6 +214,39 @@ test('G3 proDescendingStep=one: only exactly -1', () => {
   g.players[0].quick.shift();
   r = apply(g, { type: 'playToRow', player: 0, source: { kind: 'quick' }, slot: 0 });
   assert.ok(r.ok);                                       // 7 onto 8
+});
+
+test('G9 quick pile to center: locked by default, switch enables it', () => {
+  const mut = (s: GameState) => {
+    s.config.targetRounds = 3;
+    s.players[0].quick = [card(0, 1), card(0, 2)];
+    s.center = [];
+  };
+  // default: the quick pile only drains through the row
+  let r = apply(rig(mut), { type: 'playToCenter', player: 0, source: { kind: 'quick' }, pile: 'new' });
+  assert.equal(!r.ok && r.reason, 'quickLocked');
+  // rulebook mode: allowed
+  r = apply(rig(mut, 4, { quickToCenter: true }),
+    { type: 'playToCenter', player: 0, source: { kind: 'quick' }, pile: 'new' });
+  assert.ok(r.ok);
+});
+
+test('G9 stalemate: a locked quick card that would fit does not block diagnosis', () => {
+  const g = rig(s => {
+    s.config.targetRounds = 3;
+    s.center = [{ color: 0, height: 1, owners: [0] }];
+    for (const p of s.players) {
+      p.row = p.row.map(() => [card(1, 9, 0)]);
+      p.quick = [card(2, 9, 0)];
+      p.hand = [card(3, 9, 0)];
+      p.waste = [];
+    }
+    s.players[0].quick = [card(0, 2, 0)];   // fits pile 0, but quick is locked
+  });
+  assert.equal(isHardStalemate(g), true);   // no legal move exists
+  const gOpen = structuredClone(g);
+  gOpen.config.quickToCenter = true;
+  assert.equal(isHardStalemate(gOpen), false);
 });
 
 test('G4 proAllowEmptySlot enables empty-slot placement', () => {
