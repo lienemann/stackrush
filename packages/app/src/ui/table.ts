@@ -34,6 +34,7 @@ export class TableView {
     private S: Strings,
     private hostControls: TableHostControls | null,
     private onMenu: () => void,
+    private onLeave?: () => void,
   ) {}
 
   setStrings(S: Strings): void { this.S = S; }
@@ -115,7 +116,7 @@ export class TableView {
     );
 
     if (state.phase !== 'playing') {
-      renderEndSheet(table, state, lobby.players, this.S, this.hostControls);
+      renderEndSheet(table, state, lobby.players, this.S, this.hostControls, this.onLeave);
     }
 
     // remember pile tops for the next diff (pop animation)
@@ -317,8 +318,12 @@ export class TableView {
       this.flashError(key); // red blink on the card itself — no covering toast
       return;
     }
-    if (targets.length === 1) {
-      // fast path: single target -> first tap plays immediately
+    // fast path: a single target plays immediately — and so does an ambiguity
+    // among CENTER piles only, since those are interchangeable for the player
+    // (same card leaves, same point). A picker appears only when the choices
+    // differ in kind: center vs. pro buffer vs. manual refill.
+    const allCenter = targets.every(tg => tg.action.type === 'playToCenter');
+    if (targets.length === 1 || allCenter) {
       this.selected = null;
       this.submit(player, targets[0].action, key);
       return;

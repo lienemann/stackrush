@@ -1,6 +1,6 @@
 import { Emitter, PeerId, Transport, TransportCaps } from '../transport.js';
 import {
-  Demodulator, MAX_PAYLOAD, ModemConfig, TONE_SETS, defaultModemConfig, encodeFrame,
+  Demodulator, MAX_PAYLOAD, ModemConfig, PAIRING_SET, TONE_SETS, defaultModemConfig, encodeFrame,
 } from './dsp.js';
 
 /**
@@ -35,6 +35,9 @@ export class AcousticTransport implements Transport {
   private message = new Emitter<[PeerId, Uint8Array]>();
   private peerJoin = new Emitter<[PeerId]>();
   private peerLeave = new Emitter<[PeerId]>();
+  private level = new Emitter<[number]>();
+  private levelPeak = 0;
+  private levelLastEmit = 0;
   private ctx: AudioContext | null = null;
   private gain: GainNode | null = null;
   private demods: { set: number; demod: Demodulator }[] = [];
@@ -95,7 +98,17 @@ export class AcousticTransport implements Transport {
     src.connect(this.workletNode);
     this.workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
       if (this.closed) return;
-      if (performance.now() < this.txUntil) return; // half-duplex mute
+      // input level for the listening UI (throttled to ~8 Hz)
+      let sum = 0;
+      for (let i = 0; i < e.data.length; i++) sum += e.data[i] * e.data[i];
+      this.levelPeak = Math.max(this.levelPeak, Math.sqrt(sum / e.data.length));
+      const now = performance.now();
+      if (now - this.levelLastEmit > 120) {
+        this.level.emit(this.levelPeak);
+        this.levelPeak = 0;
+        this.levelLastEmit = now;
+      }
+      if (now < this.txUntil) return; // half-duplex mute
       for (const { set, demod } of this.demods) {
         if (this.pinnedSet !== null && set !== this.pinnedSet) continue;
         for (const frame of demod.push(e.data)) this.onFrame(set, frame.sender, frame.payload);
@@ -150,17 +163,27 @@ export class AcousticTransport implements Transport {
 
   /**
    * Repeatedly broadcast a small payload (e.g. the room code) — the pairing
-   * beacon. Goes through the normal framed send path, which alternates tone
-   * sets while unpinned (calibration). Returns a stop function.
+   * beacon. Uses the audible midrange PAIRING_SET: chirps every phone can
+   * emit and hear, and the sender audibly knows it is transmitting.
+   * Returns a stop function.
    */
-  beacon(payload: Uint8Array, intervalMs = 1400): () => void {
+  beacon(payload: Uint8Array, intervalMs = 1600): () => void {
     const tick = () => {
-      if (this.queue.length === 0 && !this.sending) this.send('all', payload);
+      if (this.sending || !this.ctx) return;
+      const seq = this.seq = (this.seq + 1) & 0x7f;
+      const framed = new Uint8Array(FRAG_HEADER + payload.length);
+      framed[0] = seq;   // single fragment, no more-flag
+      framed[1] = 0;
+      framed.set(payload, FRAG_HEADER);
+      void this.playFrame(framed, PAIRING_SET);
     };
     tick();
     const timer = setInterval(tick, intervalMs);
     return () => clearInterval(timer);
   }
+
+  /** microphone input level (0..~1 RMS), throttled — for a listening UI */
+  onLevel(cb: (rms: number) => void): void { this.level.on(cb); }
 
   private async pump(): Promise<void> {
     if (this.sending || !this.ctx) return;

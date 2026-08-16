@@ -107,7 +107,7 @@ export class HostSession {
       const existing = this.lobby.players.filter(p => p.deviceKey === msg.deviceKey);
       if (this.lobby.started) {
         if (existing.length === 0) {
-          this.transports[ti].send(peer, encodeMsg<HostMsg>({ t: 'full' }));
+          this.transports[ti].send(peer, encodeMsg<HostMsg>({ t: 'full', reason: 'started' }));
           return;
         }
         existing.forEach(p => (p.connected = true)); // reconnect into running game
@@ -117,7 +117,7 @@ export class HostSession {
         // ever duplicating players.
         const others = this.lobby.players.filter(p => p.deviceKey !== msg.deviceKey);
         if (others.length + msg.seats.length > 4) {
-          this.transports[ti].send(peer, encodeMsg<HostMsg>({ t: 'full' }));
+          this.transports[ti].send(peer, encodeMsg<HostMsg>({ t: 'full', reason: 'seats', free: Math.max(0, 4 - others.length) }));
           return;
         }
         this.lobby.players = [

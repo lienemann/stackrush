@@ -1,3 +1,4 @@
+import qrcode from 'qrcode-generator';
 import { Config } from '@stackrush/core';
 import { Strings, locales, t } from '../i18n/index.js';
 import { DeviceSettings } from '../settings.js';
@@ -14,6 +15,8 @@ export interface HomeCallbacks {
   onListen(seatNames: string[]): void; // acoustic pairing (joiner side)
   onLocale(locale: DeviceSettings['locale']): void;
   installPrompt: (() => void) | null;
+  /** prefilled room code (retry after a refused join, or a ?join= deep link) */
+  initialCode?: string;
 }
 
 /**
@@ -83,6 +86,10 @@ export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettin
     placeholder: S.roomCode, maxlength: '5', autocapitalize: 'characters',
     style: 'text-transform:uppercase;letter-spacing:0.2em;text-align:center;flex:1',
   });
+  if (cb.initialCode) codeInput.value = cb.initialCode;
+
+  // makes the seat model visible: joining brings exactly these names along
+  const joinHint = h('p', { className: 'hint', style: 'margin:0' }, '');
 
   const langSel = h('select', { 'aria-label': S.language });
   langSel.append(h('option', { value: 'auto' }, S.languageAuto));
@@ -93,7 +100,11 @@ export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettin
   root.append(h('div', { className: 'screen' },
     title,
     h('p', { className: 'tagline' }, S.tagline),
-    rosterEditor(S, settings, (names, bots) => { seatNames = names; botLevels = bots; }),
+    rosterEditor(S, settings, (names, bots) => {
+      seatNames = names;
+      botLevels = bots;
+      joinHint.textContent = t(S, 'joinAs', { names: names.map(n => n.trim() || '?').join(', ') });
+    }),
     h('div', { className: 'stack' },
       h('button', { className: 'primary', onclick: () => {
         if (seatNames.length + botLevels.length < 2) { toast(`${S.players}: 2–4`); return; }
@@ -108,6 +119,7 @@ export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettin
           cb.onJoin(code, seatNames.map(n => n.trim() || '?'));
         } }, S.joinGame),
       ),
+      joinHint,
       h('button', { className: 'ghost', onclick: () => cb.onListen(seatNames.map(n => n.trim() || '?')) }, S.pairBySound),
     ),
     h('div', { className: 'rowline', style: 'width:min(420px,100%)' },
@@ -137,17 +149,35 @@ export function renderLobby(root: HTMLElement, S: Strings, lobby: LobbyState, cb
   root.append(screen);
 
   if (lobby.roomCode) {
+    const joinUrl = `${location.origin}${location.pathname}?join=${lobby.roomCode}`;
     screen.append(
       h('div', { className: 'roomcode' }, lobby.roomCode),
-      h('div', { className: 'rowline', style: 'width:min(260px,100%)' },
+      h('div', { className: 'rowline', style: 'width:min(360px,100%)' },
+        h('button', { onclick: async () => {
+          // native share sheet where available (mobile), else copy the link
+          try {
+            if (navigator.share) { await navigator.share({ url: joinUrl, title: S.appName }); return; }
+          } catch (e) { if ((e as Error).name === 'AbortError') return; }
+          try { await navigator.clipboard.writeText(joinUrl); toast(S.copied); }
+          catch { toast(joinUrl, 4000); }
+        } }, S.shareLink),
         h('button', { onclick: async () => {
           try { await navigator.clipboard.writeText(lobby.roomCode!); toast(S.copied); }
           catch { toast(lobby.roomCode!); }
         } }, S.copy),
         cb.isHost ? h('button', { onclick: () => cb.onBeacon() }, S.pairBySound) : null,
       ),
-      h('p', { className: 'hint' }, cb.isHost ? S.waitingForPlayers : S.waitingForHost),
     );
+    if (cb.isHost) {
+      // QR of the join link: the other phone scans it with its normal camera
+      const qr = qrcode(0, 'M');
+      qr.addData(joinUrl);
+      qr.make();
+      const box = h('div', { className: 'qrbox', 'aria-label': S.scanToJoin });
+      box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      screen.append(box, h('p', { className: 'hint', style: 'margin:0' }, S.scanToJoin));
+    }
+    screen.append(h('p', { className: 'hint' }, cb.isHost ? S.waitingForPlayers : S.waitingForHost));
   }
 
   const list = h('div', { className: 'playerlist' });

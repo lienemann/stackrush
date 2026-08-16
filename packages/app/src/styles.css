@@ -84,6 +84,24 @@ input, select {
 .rowline > * { flex: 1; }
 .rowline > label { flex: 2; }
 
+.leveltrack {
+  height: 14px; border-radius: 7px; background: #101622;
+  border: 1px solid #3A4763; overflow: hidden;
+}
+.leveltrack .levelbar {
+  height: 100%; width: 0%; border-radius: 7px;
+  background: var(--go); transition: width 0.12s linear;
+}
+
+.qrbox {
+  width: min(180px, 44vw);
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px;
+  line-height: 0;
+}
+.qrbox svg { width: 100%; height: auto; }
+
 .roomcode {
   font-family: 'Archivo Black', sans-serif;
   font-size: 2.6rem;
@@ -310,4 +328,9 @@ a.sheetlink { color: var(--go); text-decoration: underline; word-break: break-al
   background: var(--danger); color: #fff; text-align: center;
   padding: max(8px, env(safe-area-inset-top)) 12px 8px;
   font-size: 0.9rem;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+}
+.banner .banner-btn {
+  min-height: 32px; padding: 4px 14px; border-radius: 999px;
+  background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.6); color: #fff;
 }
