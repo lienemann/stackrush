@@ -66,8 +66,8 @@ Karte „egal ob in die Mitte oder in die Reihe" — das Heft erlaubt den direkt
 Mittelzug also. Verbreitete Tischpraxis ist strenger: Der Stapel leert sich
 nur über das Nachrücken in die Reihe, die damit der einzige taktische
 Engpass bleibt.
-**Default:** `quickToCenter: false` (strengere Hauslesart, Wunsch des
-Tisches, für den diese App entsteht). **Alternative:** `true` = Heftlesart.
+**Default:** `quickToCenter: false` (strengere Hauslesart).
+**Alternative:** `true` = Heftlesart.
 Die Blockade-Erkennung berücksichtigt den Schalter: eine gesperrte
 Schnellstapel-Karte, die in die Mitte passen würde, verhindert keine
 Blockade-Diagnose.

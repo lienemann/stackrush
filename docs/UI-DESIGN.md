@@ -75,7 +75,7 @@ truth and keeps the layout calm.
   error).
 - `cannotPlayHere` toast only for *illegal* taps, not lost races.
 - Reduced motion: replace flight/pulse with opacity steps. Wake lock during
-  rounds. Hit targets ≥ 48 px even in 4-seat quadrants.
+  rounds. Hit targets ≥ 48 px even with four seats on one screen.
 
 ## Component tree (app)
 

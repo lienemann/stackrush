@@ -63,8 +63,8 @@ playable, and the game-end paragraph mentions the last card leaving "into the
 middle or into the row" — so the booklet allows a direct center play. Common
 table practice is stricter: the pile drains only through row refills, which
 keeps the row as the single tactical bottleneck.
-**Default:** `quickToCenter: false` (stricter house reading, as requested by
-the table this app is built for). **Alternative:** `true` = booklet reading.
+**Default:** `quickToCenter: false` (stricter house reading).
+**Alternative:** `true` = booklet reading.
 The stalemate detector accounts for the switch: a locked quick card that
 would fit the center does not block a stalemate diagnosis.
 
