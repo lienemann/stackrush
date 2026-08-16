@@ -231,12 +231,20 @@ function configEditor(S: Strings, cfg: Config, onConfig: (patch: Partial<Config>
     return row(label, info, input);
   };
 
-  const rounds = h('input', { type: 'number', min: '1', max: '9', value: String(cfg.targetRounds), style: 'width:5em;flex:none' });
-  rounds.addEventListener('change', () => {
-    const v = Math.max(1, Math.min(9, Number(rounds.value) || 1));
-    onConfig({ targetRounds: v });
-  });
-  box.append(row(S.targetRounds, S.infoTargetRounds, rounds));
+  // stepper instead of a number input: a text field's blur fires `change`,
+  // which re-renders the lobby and swallows the very next tap (the "game
+  // doesn't start" bug). Buttons commit on tap — nothing pending, no limit.
+  const step = (d: number) => (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation(); // inside a <label>: don't let activation re-dispatch
+    onConfig({ targetRounds: Math.min(999, Math.max(1, cfg.targetRounds + d)) });
+  };
+  const stepper = h('span', { className: 'stepper' },
+    h('button', { className: 'ghost', 'aria-label': '−', onclick: step(-1) }, '−'),
+    h('b', { className: 'stepval' }, String(cfg.targetRounds)),
+    h('button', { className: 'ghost', 'aria-label': '+', onclick: step(1) }, '+'),
+  );
+  box.append(row(S.targetRounds, S.infoTargetRounds, stepper));
 
   box.append(check(S.proVariant, S.infoProVariant, cfg.proVariant, v => onConfig({ proVariant: v })));
 
