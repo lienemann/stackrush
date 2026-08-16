@@ -92,11 +92,11 @@ export class HostSession {
     this.broadcastLobby();
   }
 
-  /** Remove a seat by index (lobby only; humans free their seats by leaving). */
+  /** Remove any seat by index (lobby only) — bots, ghosts, stray duplicates. */
   removePlayer(index: number): void {
     if (this.lobby.started) return;
     const pl = this.lobby.players[index];
-    if (!pl || pl.bot === undefined) return; // only bot seats are host-removable
+    if (!pl) return;
     this.lobby.players.splice(index, 1);
     this.broadcastLobby();
   }
@@ -105,17 +105,25 @@ export class HostSession {
     const key = `${ti}:${peer}`;
     if (msg.t === 'hello') {
       const existing = this.lobby.players.filter(p => p.deviceKey === msg.deviceKey);
-      if (existing.length > 0) {
-        // reconnect: re-attach the device to its seats
-        existing.forEach(p => (p.connected = true));
-      } else {
-        if (this.lobby.started ||
-            this.lobby.players.length + msg.seats.length > 4) {
+      if (this.lobby.started) {
+        if (existing.length === 0) {
           this.transports[ti].send(peer, encodeMsg<HostMsg>({ t: 'full' }));
           return;
         }
-        for (const name of msg.seats)
-          this.lobby.players.push({ name, deviceKey: msg.deviceKey, connected: true });
+        existing.forEach(p => (p.connected = true)); // reconnect into running game
+      } else {
+        // lobby: a hello is the device's CURRENT seat list — replace, don't
+        // append. This keeps repeated hellos, name edits and re-joins from
+        // ever duplicating players.
+        const others = this.lobby.players.filter(p => p.deviceKey !== msg.deviceKey);
+        if (others.length + msg.seats.length > 4) {
+          this.transports[ti].send(peer, encodeMsg<HostMsg>({ t: 'full' }));
+          return;
+        }
+        this.lobby.players = [
+          ...others,
+          ...msg.seats.map(name => ({ name, deviceKey: msg.deviceKey, connected: true })),
+        ];
       }
       this.peers.set(msg.deviceKey, { transport: this.transports[ti], peer });
       this.peerDevice.set(key, msg.deviceKey);
@@ -149,6 +157,10 @@ export class HostSession {
     const deviceKey = this.peerDevice.get(`${ti}:${peer}`);
     if (!deviceKey) return;
     this.peerDevice.delete(`${ti}:${peer}`);
+    // a page reload re-hellos with a NEW peer id before the OLD one's leave
+    // is detected — that stale leave must not detach the re-joined device
+    const current = this.peers.get(deviceKey);
+    if (!current || current.peer !== peer || current.transport !== this.transports[ti]) return;
     this.peers.delete(deviceKey);
     let changed = false;
     for (const p of this.lobby.players) {

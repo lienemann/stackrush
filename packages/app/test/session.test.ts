@@ -56,6 +56,49 @@ test('flipHand goes through the arbiter window and broadcasts a new version', as
   host.close();
 });
 
+test('lobby: repeated and changed hellos never duplicate players', async () => {
+  const hub = new LoopbackHub();
+  const host = new HostSession({}, 'DUP01', [hub.endpoint('host-net')]);
+  const a = new ClientSession(hub.endpoint('devA'), 'devA');
+  a.hello(['Anna']);
+  const b = new ClientSession(hub.endpoint('devB'), 'devB');
+  // main.ts sends hello several times while signaling settles
+  b.hello(['Ben']);
+  b.hello(['Ben']);
+  await until(() => (a.lobby?.players.length ?? 0) >= 2);
+  b.hello(['Ben']); // late timer tick
+  await wait(50);
+  assert.deepEqual(a.lobby!.players.map(p => p.name), ['Anna', 'Ben']);
+  // device B changes its seat list (e.g. removed a stale second name) -> replace
+  b.hello(['Ben', 'Mia']);
+  await until(() => (a.lobby?.players.length ?? 0) === 3);
+  assert.deepEqual(a.lobby!.players.map(p => p.name), ['Anna', 'Ben', 'Mia']);
+  b.hello(['Ben']);
+  await until(() => (a.lobby?.players.length ?? 0) === 2);
+  assert.deepEqual(a.lobby!.players.map(p => p.name), ['Anna', 'Ben']);
+  host.close();
+});
+
+test('lobby: stale peer-leave after a reload re-hello does not drop the player', async () => {
+  const hub = new LoopbackHub();
+  const host = new HostSession({}, 'DUP02', [hub.endpoint('host-net')]);
+  const a = new ClientSession(hub.endpoint('devA'), 'devA');
+  a.hello(['Anna']);
+  const epOld = hub.endpoint('devB-old');
+  const bOld = new ClientSession(epOld, 'devB');
+  bOld.hello(['Ben']);
+  await until(() => (a.lobby?.players.length ?? 0) === 2);
+  // reload: new endpoint, same deviceKey, hello arrives BEFORE old peer's leave
+  const bNew = new ClientSession(hub.endpoint('devB-new'), 'devB');
+  bNew.hello(['Ben']);
+  await wait(50);
+  epOld.close(); // the stale leave
+  await wait(80);
+  assert.deepEqual(a.lobby!.players.map(p => `${p.name}${p.connected ? '' : '⚠'}`), ['Anna', 'Ben'],
+    'Ben must survive the stale leave, still connected');
+  host.close();
+});
+
 test('watchdog: slow deliberation does NOT end the round (no false stalemate)', async () => {
   const hub = new LoopbackHub();
   const host = new HostSession({}, 'SLOW1', [hub.endpoint('host-net')]);

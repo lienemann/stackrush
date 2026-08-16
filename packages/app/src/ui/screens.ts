@@ -152,7 +152,8 @@ export function renderLobby(root: HTMLElement, S: Strings, lobby: LobbyState, cb
 
   const list = h('div', { className: 'playerlist' });
   lobby.players.forEach((p, i) => {
-    const removable = cb.isHost && p.bot !== undefined && !lobby.started;
+    // host may remove ANY seat pre-start: bots, ghost entries, duplicates
+    const removable = cb.isHost && !lobby.started;
     list.append(h('div', { className: `playerchip${p.connected ? '' : ' off'}` },
       h('span', { className: 'dot', style: `background:${OWNER_COLORS[i]}` }),
       h('span', { style: 'flex:1' }, p.name),
