@@ -26,25 +26,28 @@ function rng(seed: number): () => number {
   };
 }
 
-test('reaction time: higher level is faster, always within its band', () => {
+test('ten levels: reaction bands stay in range and are strictly faster upward', () => {
+  assert.equal(BOT_LEVELS.length, 10);
   for (const lvl of BOT_LEVELS) {
     const [lo, hi] = BOT_PROFILES[lvl].reactionMs;
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 30; i++) {
       const ms = botReactionMs(lvl, rng(i + lvl * 100));
       assert.ok(ms >= lo && ms <= hi, `L${lvl} ${ms} out of [${lo},${hi}]`);
     }
   }
-  // monotonic: each level's band is faster than the one below
   for (let i = 1; i < BOT_LEVELS.length; i++) {
-    const lower = BOT_PROFILES[(i) as BotLevel].reactionMs;
-    const higher = BOT_PROFILES[(i + 1) as BotLevel].reactionMs;
-    assert.ok(higher[0] < lower[0] && higher[1] < lower[1]);
+    const lower = BOT_PROFILES[BOT_LEVELS[i - 1]];
+    const higher = BOT_PROFILES[BOT_LEVELS[i]];
+    assert.ok(higher.reactionMs[0] < lower.reactionMs[0] && higher.reactionMs[1] < lower.reactionMs[1],
+      `L${BOT_LEVELS[i]} must react faster than L${BOT_LEVELS[i - 1]}`);
+    assert.ok(higher.skill >= lower.skill && higher.oversight <= lower.oversight,
+      `L${BOT_LEVELS[i]} must play at least as well as L${BOT_LEVELS[i - 1]}`);
   }
 });
 
 test('every chosen action is legal against the engine (fuzz over levels)', () => {
-  for (const lvl of BOT_LEVELS) {
-    let g = newGame(makeConfig({ players: 3, targetRounds: 3, proVariant: lvl >= 4 }), lvl * 7);
+  for (const lvl of [1, 4, 7, 10] as BotLevel[]) {
+    let g = newGame(makeConfig({ players: 3, targetRounds: 3, proVariant: lvl >= 8 }), lvl * 7);
     const r = rng(lvl * 999);
     for (let step = 0; step < 400 && g.phase === 'playing'; step++) {
       const player = step % g.config.players;
@@ -57,15 +60,31 @@ test('every chosen action is legal against the engine (fuzz over levels)', () =>
   }
 });
 
-test('level 5 takes an available center play (win-condition first)', () => {
+test('level 10 takes an available center play (win-condition first)', () => {
   const g = rig(s => {
     s.players[0].row = [[card(0, 1)], [card(1, 7)], [card(2, 7)]];
     s.center = [];
   });
-  // deterministic: skill 1.0 -> always the top-ranked move; opening with the 1
-  const action = chooseBotAction(g, 0, 5, rng(3));
+  // deterministic: skill 1.0, oversight 0 -> always the top-ranked move
+  const action = chooseBotAction(g, 0, 10, rng(3));
   assert.ok(action && action.type === 'playToCenter');
   assert.ok(apply(g, action).ok);
+});
+
+test('level 1 overlooks obvious plays often (weak play, not just slow)', () => {
+  const g = rig(s => {
+    s.players[0].row = [[card(0, 1)], [card(1, 7)], [card(2, 7)]];
+    s.players[0].hand = [card(3, 5), card(3, 6), card(3, 7)];
+    s.center = [];
+  });
+  let missed = 0, played = 0;
+  for (let i = 0; i < 60; i++) {
+    const a = chooseBotAction(g, 0, 1, rng(i * 13 + 1));
+    if (a?.type === 'playToCenter') played++;
+    else missed++; // flipped or idled despite a playable 1
+  }
+  assert.ok(missed > 15, `L1 missed only ${missed}/60 — too strong`);
+  assert.ok(played > 0, 'L1 must still find plays sometimes');
 });
 
 test('no placement available -> flips the hand to cycle cards', () => {
@@ -76,10 +95,10 @@ test('no placement available -> flips the hand to cycle cards', () => {
     s.players[0].waste = [card(0, 8)];
     s.players[0].hand = [card(1, 2), card(2, 3), card(3, 4)];
   });
-  // high diligence level always flips when nothing is placeable
+  // full diligence level always flips when nothing is placeable
   let flips = 0;
   for (let i = 0; i < 20; i++) {
-    const a = chooseBotAction(g, 0, 5, rng(i + 1));
+    const a = chooseBotAction(g, 0, 10, rng(i + 1));
     if (a?.type === 'flipHand') flips++;
   }
   assert.equal(flips, 20);
@@ -94,13 +113,13 @@ test('call mode: empties quick pile then calls Stop', () => {
     s.players[0].waste = [];
     s.players[0].hand = [];
   });
-  const a = chooseBotAction(g, 0, 4, rng(5));
+  const a = chooseBotAction(g, 0, 9, rng(5));
   assert.deepEqual(a, { type: 'callStop', player: 0 });
 });
 
 test('deterministic under a fixed seed', () => {
   const g = newGame(makeConfig({ players: 2 }), 123);
-  const a1 = chooseBotAction(g, 0, 3, rng(42));
-  const a2 = chooseBotAction(g, 0, 3, rng(42));
+  const a1 = chooseBotAction(g, 0, 6, rng(42));
+  const a2 = chooseBotAction(g, 0, 6, rng(42));
   assert.deepEqual(a1, a2);
 });

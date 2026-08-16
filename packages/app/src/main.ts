@@ -3,6 +3,7 @@ import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-600.css';
 import './styles.css';
 
+import { BotLevel } from '@stackrush/core';
 import { LoopbackHub, Transport } from '@stackrush/net';
 import { Strings } from './i18n/index.js';
 import { DeviceSettings, loadSettings, saveSettings, strings } from './settings.js';
@@ -42,9 +43,15 @@ function attachClient(c: ClientSession, seatNames: string[]): void {
   settings.seatNames = seatNames;
   saveSettings(settings);
   client = c;
-  c.on('lobby', () => {
-    if (screen !== 'table') { screen = 'lobby'; render(); }
-    else render(); // chips / connection badges update mid-game
+  c.on('lobby', lobby => {
+    if (screen === 'table' && !lobby.started) {
+      // the host sent everyone back to the lobby (roster preserved)
+      table = null;
+      screen = 'lobby';
+    } else if (screen !== 'table') {
+      screen = 'lobby';
+    }
+    render();
   });
   c.on('state', () => {
     if (screen !== 'table') screen = 'table';
@@ -63,8 +70,11 @@ function applyPendingBots(bots: number[]): void {
   if (!host || bots.length === 0) return;
   const h = host;
   // defer past the hello round-trip so bots seat AFTER the humans (humans first)
-  setTimeout(() => bots.forEach(l => h.addBot(Math.max(1, Math.min(5, l)) as 1 | 2 | 3 | 4 | 5)), 0);
+  setTimeout(() => bots.forEach(l => h.addBot(clampLevel(l))), 0);
 }
+
+const clampLevel = (l: number): BotLevel =>
+  Math.max(1, Math.min(10, Math.round(l))) as BotLevel;
 
 function playLocal(seatNames: string[], botLevels: number[] = []): void {
   const hub = new LoopbackHub();
@@ -199,7 +209,7 @@ function render(): void {
         onStart: () => host?.start(),
         onConfig: patch => host?.updateConfig(patch),
         onBeacon: () => void beaconCode(),
-        onAddBot: level => host?.addBot(Math.max(1, Math.min(5, level)) as 1 | 2 | 3 | 4 | 5),
+        onAddBot: level => host?.addBot(clampLevel(level)),
         onRemovePlayer: i => host?.removePlayer(i),
         onLeave: leave,
       });
@@ -215,7 +225,9 @@ function render(): void {
             rematch: () => host!.rematch(),
             backToLobby: () => { table = null; screen = 'lobby'; host!.backToLobby(); },
           } : null,
-          () => showGameMenu(S, settings, setLocale, leave, host ? downloadDebugLog : undefined));
+          () => showGameMenu(S, settings, setLocale, leave,
+            host ? downloadDebugLog : undefined,
+            host ? () => { table = null; screen = 'lobby'; host!.backToLobby(); } : undefined));
       }
       table.setStrings(S);
       table.render();

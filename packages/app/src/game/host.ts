@@ -174,7 +174,9 @@ export class HostSession {
         this.bots.set(i, { level: pl.bot as BotLevel, readyAt: 0, reaction: 0, actedVersion: -1, lastActAt: 0 });
     });
     this.state = newGame(this.lobby.config, this.seed());
-    this.version = 1;
+    // monotonic across games: clients discard versions they have already seen,
+    // so a restart after backToLobby must NOT reset the counter
+    this.version++;
     this.lastAcceptedAt = performance.now();
     this.stuckSince = null;
     this.logLine('start', {
