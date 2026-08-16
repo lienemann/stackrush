@@ -242,20 +242,46 @@ function render(): void {
   }
 }
 
-/** save the host's JSONL debug log to a file (host device only) */
-function downloadDebugLog(): void {
+/**
+ * Export the host's JSONL debug log. Anchor-downloads of blob URLs fail
+ * silently on iOS (especially installed PWAs), so the ladder is:
+ * native share sheet (mobile) → anchor download (desktop) → clipboard.
+ */
+async function downloadDebugLog(): Promise<void> {
   if (!host) return;
-  const blob = new Blob([host.debugLogJSONL()], { type: 'application/x-ndjson' });
-  const url = URL.createObjectURL(blob);
+  const text = host.debugLogJSONL() || '{}\n';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `stackrush-debug-${stamp}.jsonl`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(S.downloadLog);
+  const name = `stackrush-debug-${stamp}.jsonl`;
+
+  try {
+    const file = new File([text], name, { type: 'text/plain' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      return;
+    }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') return; // user closed the sheet
+  }
+
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(S.downloadLog);
+    return;
+  } catch { /* fall through to clipboard */ }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(S.copied);
+  } catch {
+    toast('✗');
+  }
 }
 
 function setLocale(locale: DeviceSettings['locale']): void {

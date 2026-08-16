@@ -99,6 +99,14 @@ export const en = {
   aboutAuthors: 'By Julian & Jan',
   aboutVersion: 'Version {v}',
   aboutNote: 'A real-time card race for 2–4 players — on one device or across phones.',
+  aboutContact: 'Contact',
+  aboutSource: 'Source code on GitHub',
+  aboutLegalTitle: 'Legal & privacy',
+  aboutLegal: `A private, non-commercial project without ads.
+
+Responsible: Julian & Jan · stackrush@jan-lienemann.de
+
+Privacy: The app uses no accounts and no trackers; settings and games stay on your device. Online games establish direct WebRTC connections — your IP address is visible to your fellow players and to the public signaling relays that broker the connection. The app is delivered via GitHub Pages; GitHub processes technical access data (such as IP addresses) under its own privacy policy.`,
   howToPlay: 'How to play',
   close: 'Close',
   manual: `GOAL
@@ -226,6 +234,14 @@ export const de: Strings = {
   aboutAuthors: 'Von Julian & Jan',
   aboutVersion: 'Version {v}',
   aboutNote: 'Ein Echtzeit-Kartenrennen für 2–4 Spieler — auf einem Gerät oder über mehrere Handys.',
+  aboutContact: 'Kontakt',
+  aboutSource: 'Quellcode auf GitHub',
+  aboutLegalTitle: 'Impressum & Datenschutz',
+  aboutLegal: `Ein privates, nichtkommerzielles Projekt ohne Werbung.
+
+Verantwortlich: Julian & Jan · stackrush@jan-lienemann.de
+
+Datenschutz: Die App verwendet keine Konten und keine Tracker; Einstellungen und Spiele bleiben auf deinem Gerät. Bei Online-Spielen werden direkte WebRTC-Verbindungen aufgebaut — deine IP-Adresse ist dabei für Mitspieler und für die öffentlichen Vermittlungsserver (Signaling-Relays) sichtbar. Die App wird über GitHub Pages ausgeliefert; GitHub verarbeitet dabei technische Zugriffsdaten (z. B. IP-Adressen) nach eigenen Datenschutzbestimmungen.`,
   howToPlay: 'Spielanleitung',
   close: 'Schließen',
   manual: `ZIEL

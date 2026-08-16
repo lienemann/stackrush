@@ -38,12 +38,10 @@ export class TableView {
 
   setStrings(S: Strings): void { this.S = S; }
 
-  /** players seated on this device, in lobby order */
-  private localPlayers(): number[] {
-    const lobby = this.client.lobby;
-    if (!lobby) return [];
-    return lobby.players.flatMap((p, i) => (p.deviceKey === this.myDeviceKey ? [i] : []));
-  }
+  /** region assignment preference: local seats grab the bottom/near edges */
+  private static readonly LOCAL_PREF: Record<number, number[]> = {
+    1: [0], 2: [1, 0], 3: [2, 1, 0], 4: [3, 1, 2, 0],
+  };
 
   render(): void {
     const state = this.client.displayState();
@@ -53,28 +51,41 @@ export class TableView {
     const table = h('div', { className: 'table' });
     this.root.append(table);
 
-    const locals = this.localPlayers();
-    const n = Math.max(1, Math.min(4, locals.length)) as 1 | 2 | 3 | 4;
-    const regions = seatRegions(n);
+    // EVERY player gets a seat at the table — bots and remote players render
+    // exactly like local ones, just read-only. Locals sit at the bottom edge
+    // (thumb reach), everyone else fills the far edges.
+    const total = Math.max(1, Math.min(4, state.config.players)) as 1 | 2 | 3 | 4;
+    const regions = seatRegions(total);
+    const localPref = TableView.LOCAL_PREF[total];
+    const otherPref = [...localPref].reverse();
+    const taken = new Set<number>();
+    const pick = (pref: number[]) => pref.find(i => !taken.has(i))!;
+    const assignment: Array<{ player: number; region: number; interactive: boolean }> = [];
+    for (let player = 0; player < total; player++) {
+      const interactive = lobby.players[player]?.deviceKey === this.myDeviceKey;
+      const region = pick(interactive ? localPref : otherPref);
+      taken.add(region);
+      assignment.push({ player, region, interactive });
+    }
 
-    // seat regions
-    locals.forEach((player, i) => {
-      const region = regions[i];
+    const rowSlots = state.config.rowSize;
+    for (const { player, region: ri, interactive } of assignment) {
+      const region = regions[ri];
       const seat = h('div', { className: 'seat' });
       const [x, y, w, hh] = region.rect;
       Object.assign(seat.style, {
         left: `${x * 100}%`, top: `${y * 100}%`,
         width: `${w * 100}%`, height: `${hh * 100}%`,
       });
-      const inner = h('div', { className: 'seat-inner' });
+      const inner = h('div', { className: `seat-inner${interactive ? '' : ' ro'}` });
       seat.append(inner);
       table.append(seat);
-      this.renderSeat(inner, state, player, lobby.players[player]?.name ?? `P${player + 1}`, locals.length > 1);
+      const pl = lobby.players[player];
+      const label = `${pl?.name ?? `P${player + 1}`}${pl && !pl.connected ? ' ⚠' : ''}`;
+      this.renderSeat(inner, state, player, label, total > 1, interactive);
       // rotate content toward this seat's edge; 90/270 swap the box dims.
       // The measured region also sets --cw, the per-seat card width, so the
-      // layout scales down to small phones and 3/4-seat quadrants.
-      const state0 = this.client.displayState();
-      const rowSlots = state0?.config.rowSize ?? 5;
+      // layout scales down to small phones and 3/4 seats per screen.
       requestAnimationFrame(() => {
         const r = seat.getBoundingClientRect();
         const rot = region.rotationDeg;
@@ -92,9 +103,9 @@ export class TableView {
         const cw = Math.max(30, Math.min(72, byRow, byHand, byHeight));
         inner.style.setProperty('--cw', `${Math.floor(cw)}px`);
       });
-    });
+    }
 
-    this.renderCenter(table, state, lobby.players, locals, n);
+    this.renderCenter(table, state, total);
 
     // round badge + menu
     table.append(
@@ -113,7 +124,7 @@ export class TableView {
 
   // ---------- seat ----------
 
-  private renderSeat(el: HTMLElement, state: GameState, player: number, name: string, showLabel: boolean): void {
+  private renderSeat(el: HTMLElement, state: GameState, player: number, name: string, showLabel: boolean, interactive: boolean): void {
     const p = state.players[player];
     const cfg = state.config;
 
@@ -125,7 +136,8 @@ export class TableView {
         ? cardFaceSVG(top, { width: CARD_W })
         : slotSVG({ width: CARD_W }));
       if (stack.length > 1) btn.append(h('span', { className: 'depth' }, `×${stack.length}`));
-      btn.addEventListener('click', () => this.onTap(player, top ? { kind: 'row', slot } : null, `p${player}-row${slot}`, slot));
+      if (interactive)
+        btn.addEventListener('click', () => this.onTap(player, top ? { kind: 'row', slot } : null, `p${player}-row${slot}`, slot));
       row.append(btn);
     });
 
@@ -142,7 +154,7 @@ export class TableView {
       ? cardFaceSVG(quickTop, { width: CARD_W })
       : slotSVG({ width: CARD_W }));
     quick.append(h('span', { className: 'count' }, t(this.S, 'quickLeft', { n: p.quick.length })));
-    if (quickActionable)
+    if (interactive && quickActionable)
       quick.addEventListener('click', () => this.onTap(player, quickTop ? { kind: 'quick' } : null, `p${player}-quick`));
     else
       quick.classList.add('inert');
@@ -163,7 +175,8 @@ export class TableView {
       waste.append(svg);
     });
     this.applyMarks(waste, `p${player}-waste`);
-    waste.addEventListener('click', () => this.onTap(player, wasteTop ? { kind: 'waste' } : null, `p${player}-waste`));
+    if (interactive)
+      waste.addEventListener('click', () => this.onTap(player, wasteTop ? { kind: 'waste' } : null, `p${player}-waste`));
     handRow.append(waste);
 
     const canFlip = p.hand.length > 0 || p.waste.length > 0;
@@ -171,14 +184,14 @@ export class TableView {
       ? cardBackSVG(player, { width: CARD_W })
       : slotSVG({ width: CARD_W, label: '↺' }));
     hand.append(h('span', { className: 'count' }, String(p.hand.length)));
-    hand.addEventListener('click', () => {
+    if (interactive) hand.addEventListener('click', () => {
       if (!canFlip) return;
       this.submit(player, { type: 'flipHand', player }, `p${player}-hand`);
     });
     handRow.append(hand);
 
     // Stop appears only when the own quick pile is empty (call mode)
-    if (cfg.roundEndMode === 'call' && p.quick.length === 0 && state.phase === 'playing') {
+    if (interactive && cfg.roundEndMode === 'call' && p.quick.length === 0 && state.phase === 'playing') {
       handRow.append(h('button', {
         className: 'stopbtn',
         onclick: () => this.submit(player, { type: 'callStop', player }, `p${player}-quick`),
@@ -215,7 +228,7 @@ export class TableView {
     }
   }
 
-  private renderCenter(table: HTMLElement, state: GameState, players: Array<{ name: string; deviceKey: string; connected: boolean }>, locals: number[], n: number): void {
+  private renderCenter(table: HTMLElement, state: GameState, n: number): void {
     const [x, y, w, hh] = this.centerRect(n);
     const strip = h('div', { className: 'center-strip' });
     Object.assign(strip.style, {
@@ -239,21 +252,6 @@ export class TableView {
     newBtn.addEventListener('click', () => this.onTargetTap('cnew'));
     piles.append(newBtn);
     strip.append(piles);
-
-    // remote players as slim status chips — the center is the shared truth
-    const remote = players.map((p, i) => ({ p, i })).filter(({ i }) => !locals.includes(i));
-    if (remote.length > 0) {
-      const chips = h('div', { className: 'chips' });
-      for (const { p, i } of remote) {
-        chips.append(h('span', { className: 'chip' },
-          fromHTML(`<span class="dot" style="background:${['#E8683A', '#4A90D9', '#57A64A', '#B06AC9'][i]}"></span>`),
-          h('b', {}, p.name),
-          ` ${t(this.S, 'quickLeft', { n: state.players[i].quick.length })}`,
-          p.connected ? '' : ' ⚠',
-        ));
-      }
-      strip.append(chips);
-    }
     table.append(strip);
   }
 

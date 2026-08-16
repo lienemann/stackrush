@@ -167,6 +167,10 @@ button.info {
 .seat-inner { --cw: 64px; }
 .seat-inner svg.card { width: var(--cw); height: auto; }
 
+/* read-only seats (bots, remote players): same table view, no input */
+.seat-inner.ro { pointer-events: none; opacity: 0.92; }
+.seat-inner.ro .seat-label { color: var(--text); opacity: 0.75; }
+
 .cardbtn.fan { display: inline-flex; align-items: flex-end; position: relative; }
 .cardbtn.fan > svg { position: relative; }
 .cardbtn.fan > svg + svg { margin-left: calc(var(--cw, 64px) * -0.72); }
@@ -280,6 +284,7 @@ table.rounds td, table.rounds th { padding: 4px clamp(3px, 1.5vw, 8px); text-ali
 table.rounds th:first-child, table.rounds td:first-child { text-align: left; }
 
 .manual { user-select: text; -webkit-user-select: text; }
+a.sheetlink { color: var(--go); text-decoration: underline; word-break: break-all; }
 .manual h3 {
   margin: 14px 0 4px;
   font-size: 0.85rem;

@@ -193,6 +193,28 @@ function infoButton(S: Strings, title: string, text: string): HTMLElement {
   return btn;
 }
 
+/** small popup with a number field — safe place for keyboard input */
+export function showNumberPrompt(S: Strings, title: string, value: number, onOk: (v: number) => void): void {
+  const input = h('input', {
+    type: 'number', inputmode: 'numeric', min: '1', value: String(value),
+    style: 'font-size:1.4rem;text-align:center',
+  });
+  const commit = () => {
+    const v = Number(input.value);
+    backdrop.remove();
+    if (Number.isFinite(v)) onOk(v);
+  };
+  const backdrop = sheet(
+    h('h2', {}, title),
+    input,
+    h('button', { className: 'primary', onclick: commit }, 'OK'),
+    h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
+  );
+  input.addEventListener('keydown', e => { if ((e as KeyboardEvent).key === 'Enter') commit(); });
+  input.focus();
+  input.select();
+}
+
 /** pick a computer player's difficulty (10 levels) from a popup */
 export function showLevelPicker(S: Strings, onPick: (level: number) => void): void {
   const grid = h('div', { className: 'levelgrid' });
@@ -234,14 +256,23 @@ function configEditor(S: Strings, cfg: Config, onConfig: (patch: Partial<Config>
   // stepper instead of a number input: a text field's blur fires `change`,
   // which re-renders the lobby and swallows the very next tap (the "game
   // doesn't start" bug). Buttons commit on tap — nothing pending, no limit.
+  const commitRounds = (v: number) =>
+    onConfig({ targetRounds: Math.min(999, Math.max(1, Math.round(v) || 1)) });
   const step = (d: number) => (e: Event) => {
     e.preventDefault();
     e.stopPropagation(); // inside a <label>: don't let activation re-dispatch
-    onConfig({ targetRounds: Math.min(999, Math.max(1, cfg.targetRounds + d)) });
+    commitRounds(cfg.targetRounds + d);
+  };
+  // the value itself opens a keyboard prompt — typing happens in a popup, so
+  // no blur/re-render can ever swallow the following Start tap again
+  const openPrompt = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showNumberPrompt(S, S.targetRounds, cfg.targetRounds, commitRounds);
   };
   const stepper = h('span', { className: 'stepper' },
     h('button', { className: 'ghost', 'aria-label': '−', onclick: step(-1) }, '−'),
-    h('b', { className: 'stepval' }, String(cfg.targetRounds)),
+    h('button', { className: 'ghost stepval', 'aria-label': S.targetRounds, onclick: openPrompt }, String(cfg.targetRounds)),
     h('button', { className: 'ghost', 'aria-label': '+', onclick: step(1) }, '+'),
   );
   box.append(row(S.targetRounds, S.infoTargetRounds, stepper));
@@ -322,11 +353,20 @@ export function showManual(S: Strings): void {
 
 export function showAbout(S: Strings): void {
   const version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+  const link = (href: string, text: string) =>
+    h('a', { href, target: '_blank', rel: 'noreferrer noopener', className: 'sheetlink' }, text);
   const backdrop = sheet(
     h('h2', {}, `${S.appName}`),
     h('p', { className: 'breakdown' }, t(S, 'aboutVersion', { v: version })),
     h('p', {}, S.aboutAuthors),
     h('p', { className: 'breakdown' }, S.aboutNote),
+    h('p', {},
+      link('https://github.com/lienemann/stackrush', S.aboutSource),
+      h('br', {}),
+      link('mailto:stackrush@jan-lienemann.de', `${S.aboutContact}: stackrush@jan-lienemann.de`),
+    ),
+    h('h2', { style: 'font-size:1.05rem' }, S.aboutLegalTitle),
+    h('p', { className: 'manual', style: 'white-space:pre-line;line-height:1.5;font-size:0.88rem;color:var(--dim)' }, S.aboutLegal),
     h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
   );
 }
