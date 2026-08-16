@@ -3,7 +3,7 @@ import { Strings, t } from '../i18n/index.js';
 import { ClientSession } from '../game/client.js';
 import { seatRegions } from '../seats.js';
 import { cardBackSVG, cardFaceSVG, slotSVG } from './cards.js';
-import { clear, fromHTML, h, haptic, toast } from './dom.js';
+import { clear, fromHTML, h, haptic } from './dom.js';
 import { renderEndSheet } from './sheets.js';
 
 /**
@@ -70,19 +70,27 @@ export class TableView {
       seat.append(inner);
       table.append(seat);
       this.renderSeat(inner, state, player, lobby.players[player]?.name ?? `P${player + 1}`, locals.length > 1);
-      // rotate content toward this seat's edge; 90/270 swap the box dims
+      // rotate content toward this seat's edge; 90/270 swap the box dims.
+      // The measured region also sets --cw, the per-seat card width, so the
+      // layout scales down to small phones and 3/4-seat quadrants.
+      const state0 = this.client.displayState();
+      const rowSlots = state0?.config.rowSize ?? 5;
       requestAnimationFrame(() => {
         const r = seat.getBoundingClientRect();
         const rot = region.rotationDeg;
-        if (rot === 90 || rot === 270) {
-          inner.style.width = `${r.height}px`;
-          inner.style.height = `${r.width}px`;
-        } else {
-          inner.style.width = `${r.width}px`;
-          inner.style.height = `${r.height}px`;
-        }
+        const iw = rot === 90 || rot === 270 ? r.height : r.width;
+        const ih = rot === 90 || rot === 270 ? r.width : r.height;
+        inner.style.width = `${iw}px`;
+        inner.style.height = `${ih}px`;
         inner.style.transform = `rotate(${rot}deg)`;
         inner.style.flexShrink = '0';
+        // fit the row (rowSlots cards + gaps) and the hand row (quick + fan +
+        // hand ≈ 3.6 card widths) into the region; height: two card rows + label
+        const byRow = (iw - 20 - (rowSlots - 1) * 6) / rowSlots;
+        const byHand = (iw - 36) / 3.7;
+        const byHeight = (ih - 44) / 2.9;
+        const cw = Math.max(30, Math.min(72, byRow, byHand, byHeight));
+        inner.style.setProperty('--cw', `${Math.floor(cw)}px`);
       });
     });
 
@@ -131,8 +139,8 @@ export class TableView {
     const quickTop = p.quick[0];
     const quickActionable = cfg.quickToCenter || cfg.proVariant;
     const quick = this.cardButton(`p${player}-quick`, quickTop
-      ? cardFaceSVG(quickTop, { width: CARD_W + 8 })
-      : slotSVG({ width: CARD_W + 8 }));
+      ? cardFaceSVG(quickTop, { width: CARD_W })
+      : slotSVG({ width: CARD_W }));
     quick.append(h('span', { className: 'count' }, t(this.S, 'quickLeft', { n: p.quick.length })));
     if (quickActionable)
       quick.addEventListener('click', () => this.onTap(player, quickTop ? { kind: 'quick' } : null, `p${player}-quick`));
@@ -305,8 +313,7 @@ export class TableView {
     }
     const targets = this.legalTargets(player, source);
     if (targets.length === 0) {
-      toast(this.S.cannotPlayHere);
-      this.shakeKey(key);
+      this.flashError(key); // red blink on the card itself — no covering toast
       return;
     }
     if (targets.length === 1) {
@@ -337,29 +344,31 @@ export class TableView {
 
   private submit(player: number, action: Action, feedbackKey: string): void {
     const rejection = this.client.submit(action);
-    if (rejection) {
-      toast(this.S.cannotPlayHere);
-      this.shakeKey(feedbackKey);
-      haptic();
-    }
+    if (rejection) this.flashError(feedbackKey);
     // success: the optimistic layer already re-rendered via the state event
   }
 
-  /** rollback feedback: short shake + haptic tick — losing races is normal */
+  /** rollback feedback: red blink + haptic tick — losing races is normal */
   rollback(action: Action): void {
-    haptic(30);
     if ('player' in action && 'source' in action) {
       const src = (action as { source: Source }).source;
       const key = src.kind === 'row'
         ? `p${action.player}-row${src.slot}`
         : `p${action.player}-${src.kind}`;
-      this.shakeKey(key);
+      this.flashError(key);
+    } else {
+      haptic(30);
     }
   }
 
-  private shakeKey(key: string): void {
+  /** the card blinks red in place instead of a screen-covering toast */
+  private flashError(key: string): void {
+    haptic(25);
     const el = this.root.querySelector(`[data-k="${key}"]`);
-    el?.classList.add('shake');
-    setTimeout(() => el?.classList.remove('shake'), 350);
+    if (!el) return;
+    el.classList.remove('err'); // restart the animation on rapid re-taps
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add('err');
+    setTimeout(() => el.classList.remove('err'), 650);
   }
 }

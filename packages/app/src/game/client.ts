@@ -57,6 +57,12 @@ export class ClientSession {
     switch (msg.t) {
       case 'lobby':
         this.lobby = msg.lobby;
+        if (!msg.lobby.started) {
+          // back in the lobby: the previous game's state is gone
+          this.authoritative = null;
+          this.pending = [];
+          this.displayCache = null;
+        }
         this.listeners.lobby?.(msg.lobby);
         return;
       case 'ping':

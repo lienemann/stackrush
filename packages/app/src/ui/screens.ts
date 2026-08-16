@@ -54,14 +54,14 @@ function rosterEditor(
     const total = names.length + bots.length;
     const controls = h('div', { className: 'rowline' });
     if (total < 4) {
-      controls.append(h('button', {
-        onclick: () => { names.push(`Player ${names.length + 1}`); render(); emit(); },
-      }, `+ ${S.seatName}`));
-      const level = h('select', { 'aria-label': S.difficulty, style: 'flex:1' });
-      ([1, 2, 3, 4, 5] as const).forEach(l => level.append(h('option', { value: String(l) }, S[`botL${l}`])));
-      level.value = '3';
-      controls.append(level,
-        h('button', { onclick: () => { bots.push(Number(level.value)); render(); emit(); } }, S.addBot));
+      controls.append(
+        h('button', {
+          onclick: () => { names.push(`Player ${names.length + 1}`); render(); emit(); },
+        }, `+ ${S.seatName}`),
+        h('button', {
+          onclick: () => showLevelPicker(S, lvl => { bots.push(lvl); render(); emit(); }),
+        }, S.addBot),
+      );
     }
     list.append(controls);
   };
@@ -163,14 +163,8 @@ export function renderLobby(root: HTMLElement, S: Strings, lobby: LobbyState, cb
   screen.append(h('fieldset', {}, h('legend', {}, S.players), list));
 
   if (cb.isHost && lobby.players.length < 4) {
-    const level = h('select', { style: 'flex:1' });
-    ([1, 2, 3, 4, 5] as const).forEach(l =>
-      level.append(h('option', { value: String(l) }, S[`botL${l}` as const])));
-    level.value = '3';
     screen.append(h('div', { className: 'rowline', style: 'width:min(420px,100%)' },
-      h('label', { style: 'flex:none;color:var(--dim)' }, S.difficulty),
-      level,
-      h('button', { onclick: () => cb.onAddBot(Number(level.value)) }, S.addBot),
+      h('button', { onclick: () => showLevelPicker(S, cb.onAddBot) }, S.addBot),
     ));
   }
 
@@ -185,16 +179,56 @@ export function renderLobby(root: HTMLElement, S: Strings, lobby: LobbyState, cb
     h('button', { className: 'ghost', onclick: () => cb.onLeave() }, S.leaveGame)));
 }
 
+/** small circled question mark opening the option's full explanation */
+function infoButton(S: Strings, title: string, text: string): HTMLElement {
+  const btn = h('button', { className: 'info', 'aria-label': S.infoTitle,
+    onclick: (e: Event) => {
+      e.preventDefault(); e.stopPropagation(); // don't toggle the switch
+      const backdrop = sheet(
+        h('h2', {}, title),
+        h('p', { className: 'manual', style: 'line-height:1.5' }, text),
+        h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
+      );
+    } }, '?');
+  return btn;
+}
+
+/** pick a computer player's difficulty (10 levels) from a popup */
+export function showLevelPicker(S: Strings, onPick: (level: number) => void): void {
+  const grid = h('div', { className: 'levelgrid' });
+  for (let l = 1; l <= 10; l++) {
+    grid.append(h('button', { onclick: () => { backdrop.remove(); onPick(l); } },
+      S[`botL${l as 1}` as `botL${1}`] ?? String(l)));
+  }
+  const backdrop = sheet(
+    h('h2', {}, `🤖 ${S.difficulty}`),
+    grid,
+    h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
+  );
+}
+
+/** engine defaults for every rule switch (the "reset" target) */
+const RULE_DEFAULTS: Partial<Config> = {
+  targetRounds: 1, proVariant: false, proDescendingStep: 'any',
+  proAllowEmptySlot: false, autoRefillRow: true, quickToCenter: false,
+  roundEndMode: 'auto', shuffleOnRecycle: true, earlyStalemate: false,
+};
+
 /** Settings screen wiring ALL Config switches (architecture checklist #4) */
 function configEditor(S: Strings, cfg: Config, onConfig: (patch: Partial<Config>) => void): HTMLElement {
   const box = h('fieldset', {});
   box.append(h('legend', {}, S.rules));
 
-  const check = (label: string, value: boolean, set: (v: boolean) => void) => {
+  const row = (label: string, info: string, control: HTMLElement) =>
+    h('label', { className: 'switch' },
+      h('span', { className: 'switch-label' }, label, infoButton(S, label, info)),
+      control);
+
+  const check = (label: string, info: string, value: boolean, set: (v: boolean) => void) => {
     const input = h('input', { type: 'checkbox' });
     input.checked = value;
     input.addEventListener('change', () => set(input.checked));
-    return h('label', { className: 'switch' }, h('span', {}, label), input);
+    return row(label, info, input);
   };
 
   const rounds = h('input', { type: 'number', min: '1', max: '9', value: String(cfg.targetRounds), style: 'width:5em;flex:none' });
@@ -202,24 +236,25 @@ function configEditor(S: Strings, cfg: Config, onConfig: (patch: Partial<Config>
     const v = Math.max(1, Math.min(9, Number(rounds.value) || 1));
     onConfig({ targetRounds: v });
   });
-  box.append(h('label', { className: 'switch' }, h('span', {}, S.targetRounds), rounds));
+  box.append(row(S.targetRounds, S.infoTargetRounds, rounds));
 
-  box.append(check(S.proVariant, cfg.proVariant, v => onConfig({ proVariant: v })));
+  box.append(check(S.proVariant, S.infoProVariant, cfg.proVariant, v => onConfig({ proVariant: v })));
 
   const stepSel = h('select', { style: 'flex:none' },
     h('option', { value: 'any' }, S.proStepAny),
     h('option', { value: 'one' }, S.proStepOne));
   stepSel.value = cfg.proDescendingStep;
   stepSel.addEventListener('change', () => onConfig({ proDescendingStep: stepSel.value as Config['proDescendingStep'] }));
-  box.append(h('label', { className: 'switch' }, h('span', {}, S.proDescendingStep), stepSel));
+  box.append(row(S.proDescendingStep, S.infoProDescendingStep, stepSel));
 
   box.append(
-    check(S.proAllowEmptySlot, cfg.proAllowEmptySlot, v => onConfig({ proAllowEmptySlot: v })),
-    check(S.autoRefillRow, cfg.autoRefillRow, v => onConfig({ autoRefillRow: v })),
-    check(S.quickToCenter, cfg.quickToCenter, v => onConfig({ quickToCenter: v })),
-    check(S.roundEndModeCall, cfg.roundEndMode === 'call', v => onConfig({ roundEndMode: v ? 'call' : 'auto' })),
-    check(S.shuffleOnRecycle, cfg.shuffleOnRecycle, v => onConfig({ shuffleOnRecycle: v })),
-    check(S.earlyStalemate, cfg.earlyStalemate, v => onConfig({ earlyStalemate: v })),
+    check(S.proAllowEmptySlot, S.infoProAllowEmptySlot, cfg.proAllowEmptySlot, v => onConfig({ proAllowEmptySlot: v })),
+    check(S.autoRefillRow, S.infoAutoRefillRow, cfg.autoRefillRow, v => onConfig({ autoRefillRow: v })),
+    check(S.quickToCenter, S.infoQuickToCenter, cfg.quickToCenter, v => onConfig({ quickToCenter: v })),
+    check(S.roundEndModeCall, S.infoRoundEndModeCall, cfg.roundEndMode === 'call', v => onConfig({ roundEndMode: v ? 'call' : 'auto' })),
+    check(S.shuffleOnRecycle, S.infoShuffleOnRecycle, cfg.shuffleOnRecycle, v => onConfig({ shuffleOnRecycle: v })),
+    check(S.earlyStalemate, S.infoEarlyStalemate, cfg.earlyStalemate, v => onConfig({ earlyStalemate: v })),
+    h('button', { className: 'ghost', onclick: () => onConfig({ ...RULE_DEFAULTS }) }, S.resetDefaults),
   );
   return box;
 }
@@ -232,11 +267,12 @@ function sheet(...children: Array<Node | string | null>): HTMLElement {
   return backdrop;
 }
 
-/** in-game settings sheet (gear): language, manual, about, debug log, leave */
+/** in-game settings sheet (gear): language, manual, about, debug log, exits */
 export function showGameMenu(
   S: Strings, settings: DeviceSettings,
   onLocale: (l: DeviceSettings['locale']) => void, onLeave: () => void,
   onDownloadLog?: () => void,
+  onBackToLobby?: () => void,
 ): void {
   const langSel = h('select', {});
   langSel.append(h('option', { value: 'auto' }, S.languageAuto));
@@ -248,6 +284,8 @@ export function showGameMenu(
     h('button', { onclick: () => { backdrop.remove(); showManual(S); } }, S.howToPlay),
     h('button', { onclick: () => { backdrop.remove(); showAbout(S); } }, S.about),
     onDownloadLog ? h('button', { onclick: () => onDownloadLog() }, S.downloadLog) : null,
+    // host: abandon the current game but KEEP the seat roster (players, bots)
+    onBackToLobby ? h('button', { onclick: () => { backdrop.remove(); onBackToLobby(); } }, S.backToLobby) : null,
     h('button', { onclick: () => { backdrop.remove(); onLeave(); } }, S.leaveGame),
     h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
   );

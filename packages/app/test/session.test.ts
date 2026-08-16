@@ -98,9 +98,9 @@ test('computer player: host drives a bot seat with no human input', async () => 
   const human = new ClientSession(hub.endpoint('devA'), 'devA');
   human.hello(['Human']);
   await until(() => (human.lobby?.players.length ?? 0) === 1);
-  host.addBot(5); // fast, skilled -> acts quickly
+  host.addBot(10); // fastest level -> acts quickly
   await until(() => (human.lobby?.players.length ?? 0) === 2);
-  assert.equal(human.lobby!.players[1].bot, 5);
+  assert.equal(human.lobby!.players[1].bot, 10);
   host.start();
   await until(() => human.displayState() !== null);
   const startVersion = human.version;
