@@ -17,8 +17,8 @@ export interface ClientEvents {
   state: () => void;
   /** an optimistic action was rolled back (lost race or stale) */
   rollback: (action: Action) => void;
-  /** kicked: room full or game already started */
-  refused: () => void;
+  /** join refused: game already running, or not enough free seats */
+  refused: (reason: 'started' | 'seats', free: number) => void;
   hostGone: () => void;
 }
 
@@ -69,7 +69,7 @@ export class ClientSession {
         this.send({ t: 'pong', id: msg.id });
         return;
       case 'full':
-        this.listeners.refused?.();
+        this.listeners.refused?.(msg.reason ?? 'seats', msg.free ?? 0);
         return;
       case 'reject': {
         const idx = this.pending.findIndex(p => p.id === msg.id);

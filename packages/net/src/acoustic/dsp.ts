@@ -40,16 +40,24 @@ export interface ModemConfig {
  * signals are mutually orthogonal under the per-symbol correlation — the
  * digital equivalent of the sim's tone spacing. The primary set spans
  * 17–20 kHz, just below the documented ~20.5 kHz speaker roll-off knee.
+ * Set 2 is the PAIRING set: audible chirps in the phone-friendly midrange,
+ * where every speaker and microphone works — used for the room-code beacon.
  */
 export const TONE_SETS: ReadonlyArray<[number, number, number, number]> = [
   [17000, 18000, 19000, 20000], // primary: near-inaudible, below the knee
   [14000, 15000, 16000, 17000], // fallback for early speaker roll-off
+  [2000, 3000, 4000, 5000],     // pairing: audible, robust on any hardware
 ];
+
+/** the audible pairing set's index in TONE_SETS */
+export const PAIRING_SET = 2;
 
 export const defaultModemConfig = (sampleRate = 48000, toneSet = 0): ModemConfig => ({
   sampleRate,
   tones: TONE_SETS[toneSet] as [number, number, number, number],
-  baud: 1000,
+  // the midrange pairing set runs slower: longer symbol windows keep the
+  // closer-spaced tones cleanly separable and shrug off room echo
+  baud: toneSet === PAIRING_SET ? 500 : 1000,
   repeat: 2,
 });
 

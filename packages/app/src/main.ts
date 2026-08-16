@@ -5,7 +5,7 @@ import './styles.css';
 
 import { BotLevel } from '@stackrush/core';
 import { LoopbackHub, Transport } from '@stackrush/net';
-import { Strings } from './i18n/index.js';
+import { Strings, t } from './i18n/index.js';
 import { DeviceSettings, loadSettings, saveSettings, strings } from './settings.js';
 import { HostSession } from './game/host.js';
 import { ClientSession } from './game/client.js';
@@ -58,9 +58,14 @@ function attachClient(c: ClientSession, seatNames: string[]): void {
     render();
   });
   c.on('rollback', action => table?.rollback(action));
-  c.on('refused', () => { toast(S.roomFull); leave(); });
+  c.on('refused', (reason, free) => {
+    // precise message, and back to home with the code preserved — the player
+    // fixes their seat list and taps Join again, no hard kick
+    toast(reason === 'started' ? S.roomStarted : t(S, 'roomSeats', { n: free }), 3500);
+    leave();
+  });
   c.on('hostGone', () => {
-    if (!host) showBanner(S.hostGone);
+    if (!host) showBanner(S.hostGone, S.leaveGame, leave);
   });
   c.hello(seatNames);
 }
@@ -98,7 +103,10 @@ async function hostOnline(seatNames: string[], botLevels: number[] = []): Promis
   applyPendingBots(botLevels);
 }
 
+let lastCode = '';
+
 async function join(code: string, seatNames: string[]): Promise<void> {
+  lastCode = code;
   try {
     const { TrysteroTransport } = await import('@stackrush/net/trystero');
     const tr = new TrysteroTransport(code);
@@ -123,8 +131,21 @@ async function listenForCode(seatNames: string[]): Promise<void> {
     const { AcousticTransport } = await import('@stackrush/net/acoustic');
     const ac = new AcousticTransport({ deviceId: 2 });
     await ac.start(true);
-    stopAcoustic = () => ac.close();
-    toast(S.listening, 6000);
+
+    // listening sheet: live input level + a way out
+    const bar = h('div', { className: 'levelbar' });
+    const backdrop = h('div', { className: 'sheet-backdrop' },
+      h('div', { className: 'sheet' },
+        h('h2', {}, S.pairBySound),
+        h('p', { className: 'hint' }, S.listening),
+        h('div', { className: 'leveltrack' }, bar),
+        h('button', { className: 'ghost', onclick: () => { stopAcoustic?.(); stopAcoustic = null; } }, S.close),
+      ));
+    document.body.append(backdrop);
+    stopAcoustic = () => { ac.close(); backdrop.remove(); };
+    ac.onLevel(rms => {
+      bar.style.width = `${Math.min(100, Math.round(rms * 700))}%`;
+    });
     ac.onMessage((_peer, data) => {
       const text = new TextDecoder().decode(data);
       if (text.startsWith('SR:')) {
@@ -173,9 +194,12 @@ function leave(): void {
 // ---------- banner ----------
 
 let banner: HTMLElement | null = null;
-function showBanner(text: string): void {
+function showBanner(text: string, actionLabel?: string, onAction?: () => void): void {
   hideBanner();
-  banner = h('div', { className: 'banner' }, text);
+  banner = h('div', { className: 'banner' }, text,
+    actionLabel && onAction
+      ? h('button', { className: 'banner-btn', onclick: () => onAction() }, actionLabel)
+      : null);
   document.body.append(banner);
 }
 function hideBanner(): void { banner?.remove(); banner = null; }
@@ -194,6 +218,7 @@ function render(): void {
         onListen: n => void listenForCode(n),
         onLocale: setLocale,
         installPrompt: installTrigger(),
+        initialCode: lastCode,
       });
       return;
     case 'lobby': {
@@ -227,7 +252,8 @@ function render(): void {
           } : null,
           () => showGameMenu(S, settings, setLocale, leave,
             host ? downloadDebugLog : undefined,
-            host ? () => { table = null; screen = 'lobby'; host!.backToLobby(); } : undefined));
+            host ? () => { table = null; screen = 'lobby'; host!.backToLobby(); } : undefined),
+          leave);
       }
       table.setStrings(S);
       table.render();
@@ -291,5 +317,12 @@ function setLocale(locale: DeviceSettings['locale']): void {
 }
 
 window.addEventListener('pagehide', () => { host?.close(); client?.close(); });
+
+// deep link from a shared join link / scanned QR: prefill the room code
+const joinParam = new URLSearchParams(location.search).get('join');
+if (joinParam) {
+  lastCode = joinParam.toUpperCase().slice(0, 8);
+  history.replaceState(null, '', location.pathname);
+}
 
 render();

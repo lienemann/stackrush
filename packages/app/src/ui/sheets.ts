@@ -18,6 +18,7 @@ export function renderEndSheet(
   players: NamedPlayer[],
   S: Strings,
   host: TableHostControls | null,
+  onLeave?: () => void,
 ): void {
   const backdrop = h('div', { className: 'sheet-backdrop' });
   const sheet = h('div', { className: 'sheet' });
@@ -112,6 +113,8 @@ export function renderEndSheet(
       sheet.append(h('button', { className: 'primary', onclick: () => host.nextRound() }, S.nextRound));
     }
   } else {
+    // guests wait for the host — but never without a way out
     sheet.append(h('div', { className: 'hint' }, S.waitingForHost));
+    if (onLeave) sheet.append(h('button', { className: 'ghost', onclick: onLeave }, S.leaveGame));
   }
 }
