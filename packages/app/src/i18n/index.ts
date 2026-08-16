@@ -98,7 +98,7 @@ export const en = {
   about: 'About',
   aboutAuthors: 'By Julian & Jan',
   aboutVersion: 'Version {v}',
-  aboutNote: 'An independent, freely written real-time card race. Original rules text, own card design, no affiliation with any published game.',
+  aboutNote: 'A real-time card race for 2–4 players — on one device or across phones.',
   howToPlay: 'How to play',
   close: 'Close',
   manual: `GOAL
@@ -225,7 +225,7 @@ export const de: Strings = {
   about: 'Über',
   aboutAuthors: 'Von Julian & Jan',
   aboutVersion: 'Version {v}',
-  aboutNote: 'Ein unabhängiges, frei formuliertes Echtzeit-Kartenrennen. Eigener Regeltext, eigenes Kartendesign, keine Verbindung zu einem verlegten Spiel.',
+  aboutNote: 'Ein Echtzeit-Kartenrennen für 2–4 Spieler — auf einem Gerät oder über mehrere Handys.',
   howToPlay: 'Spielanleitung',
   close: 'Schließen',
   manual: `ZIEL

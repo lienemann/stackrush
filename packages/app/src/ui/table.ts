@@ -208,7 +208,10 @@ export class TableView {
     switch (n) {
       case 1: return [0.05, 0.04, 0.9, 0.24];
       case 3: return [0.51, 0.34, 0.47, 0.32]; // the free middle-right cell
-      default: return [0.04, 0.375, 0.92, 0.25]; // 2/4 seats: shared middle band
+      // 4 seats sit on the four edges; their content hugs the edges, so the
+      // true middle of the screen is free for the shared piles
+      case 4: return [0.33, 0.375, 0.34, 0.25];
+      default: return [0.04, 0.375, 0.92, 0.25]; // 2 seats: shared middle band
     }
   }
 

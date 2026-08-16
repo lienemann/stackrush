@@ -18,10 +18,12 @@ export interface SeatRegion {
 }
 
 /**
- * Screen split for n local seats (portrait phone / tablet):
+ * Screen split for n local seats (portrait phone / tablet), like sitting
+ * around a real table:
  * 1: full screen. 2: top half rotated 180° vs bottom half (face-to-face).
- * 3/4: quadrants, each rotated toward its nearest edge; the shared center
- * piles render in a common strip/eye between the regions.
+ * 3: top, left edge, bottom. 4: one seat per display EDGE (top/left/right/
+ * bottom), each rotated so its cards face that edge; the shared center piles
+ * render in the middle between the regions.
  */
 export function seatRegions(n: 1 | 2 | 3 | 4): SeatRegion[] {
   switch (n) {
@@ -32,14 +34,14 @@ export function seatRegions(n: 1 | 2 | 3 | 4): SeatRegion[] {
     ];
     case 3: return [
       { rotationDeg: 180, rect: [0, 0, 1, 0.33] },      // top, upside down
-      { rotationDeg: 90, rect: [0, 0.33, 0.5, 0.34] },  // middle left, faces right
+      { rotationDeg: 90, rect: [0, 0.33, 0.5, 0.34] },  // left edge, faces right
       { rotationDeg: 0, rect: [0, 0.67, 1, 0.33] },     // bottom, upright
     ];
     case 4: return [
-      { rotationDeg: 180, rect: [0, 0, 0.5, 0.5] },
-      { rotationDeg: 180, rect: [0.5, 0, 0.5, 0.5] },
-      { rotationDeg: 0, rect: [0, 0.5, 0.5, 0.5] },
-      { rotationDeg: 0, rect: [0.5, 0.5, 0.5, 0.5] },
+      { rotationDeg: 180, rect: [0, 0, 1, 0.26] },         // top edge
+      { rotationDeg: 90, rect: [0, 0.26, 0.42, 0.48] },    // left edge
+      { rotationDeg: 270, rect: [0.58, 0.26, 0.42, 0.48] }, // right edge
+      { rotationDeg: 0, rect: [0, 0.74, 1, 0.26] },        // bottom edge
     ];
   }
 }
