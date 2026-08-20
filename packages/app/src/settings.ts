@@ -5,6 +5,8 @@ export interface DeviceSettings {
   locale: Locale | 'auto';
   seatNames: string[];
   deviceKey: string;
+  /** per local seat (by order on this device): highlight legal targets */
+  hintsBySeat: boolean[];
 }
 
 const KEY = 'stackrush.settings.v1';
@@ -14,6 +16,7 @@ function fresh(): DeviceSettings {
     locale: 'auto',
     seatNames: [],
     deviceKey: `dev-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`,
+    hintsBySeat: [],
   };
 }
 

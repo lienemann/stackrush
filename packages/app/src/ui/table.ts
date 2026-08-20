@@ -35,6 +35,10 @@ export class TableView {
     private hostControls: TableHostControls | null,
     private onMenu: () => void,
     private onLeave?: () => void,
+    /** per-seat "highlight legal targets" preference (default on) */
+    private showHints: (player: number) => boolean = () => true,
+    /** host-only: toggle pause */
+    private onPauseToggle?: (on: boolean) => void,
   ) {}
 
   setStrings(S: Strings): void { this.S = S; }
@@ -114,6 +118,18 @@ export class TableView {
         t(this.S, 'roundOf', { n: state.round, total: state.config.targetRounds })),
       h('button', { className: 'menu', 'aria-label': this.S.settings, onclick: () => this.onMenu() }, '⚙'),
     );
+
+    if (this.client.paused && state.phase === 'playing') {
+      // pause overlay blocks all input; only the host can resume
+      table.append(h('div', { className: 'sheet-backdrop' },
+        h('div', { className: 'sheet', style: 'align-items:center;text-align:center' },
+          h('h2', {}, `⏸ ${this.S.pausedTitle}`),
+          this.onPauseToggle
+            ? h('button', { className: 'primary', onclick: () => this.onPauseToggle!(false) }, this.S.continueGame)
+            : h('p', { className: 'hint' }, this.S.waitingForHost),
+          this.onLeave ? h('button', { className: 'ghost', onclick: this.onLeave }, this.S.leaveGame) : null,
+        )));
+    }
 
     if (state.phase !== 'playing') {
       renderEndSheet(table, state, lobby.players, this.S, this.hostControls, this.onLeave);
@@ -212,8 +228,12 @@ export class TableView {
   }
 
   private applyMarks(btn: HTMLElement, key: string): void {
-    if (this.selected?.sourceKey === key) btn.classList.add('selected');
-    if (this.selected?.targets.some(tg => tg.key === key)) btn.classList.add('target');
+    if (!this.selected) return;
+    if (this.selected.sourceKey === key) btn.classList.add('selected');
+    // target pulsing is a per-seat preference — with it off, play like at the
+    // real table: you know where your card goes
+    if (this.showHints(this.selected.player) && this.selected.targets.some(tg => tg.key === key))
+      btn.classList.add('target');
   }
 
   // ---------- center strip ----------
@@ -254,6 +274,21 @@ export class TableView {
     piles.append(newBtn);
     strip.append(piles);
     table.append(strip);
+
+    // scale pile cards so ALL piles fit the strip without scrolling
+    const count = state.center.length + 1;
+    requestAnimationFrame(() => {
+      const r = strip.getBoundingClientRect();
+      const maxH = (parseFloat(strip.style.maxHeight) / 100) * (table.getBoundingClientRect().height || innerHeight);
+      const availW = r.width - 20, availH = Math.max(maxH, r.height) - 20;
+      let best = 28;
+      for (let w = 60; w >= 28; w -= 2) {
+        const cols = Math.max(1, Math.floor(availW / (w + 8)));
+        const rows = Math.ceil(count / cols);
+        if (rows * (w * 1.4 + 8) <= availH) { best = w; break; }
+      }
+      strip.style.setProperty('--ccw', `${best}px`);
+    });
   }
 
   // ---------- interaction (tap-to-play, fast path) ----------
@@ -318,16 +353,8 @@ export class TableView {
       this.flashError(key); // red blink on the card itself — no covering toast
       return;
     }
-    // fast path: a single target plays immediately — and so does an ambiguity
-    // among CENTER piles only, since those are interchangeable for the player
-    // (same card leaves, same point). A picker appears only when the choices
-    // differ in kind: center vs. pro buffer vs. manual refill.
-    const allCenter = targets.every(tg => tg.action.type === 'playToCenter');
-    if (targets.length === 1 || allCenter) {
-      this.selected = null;
-      this.submit(player, targets[0].action, key);
-      return;
-    }
+    // like the physical game: pick the card up (select), then put it DOWN on
+    // the target pile — always two taps, the destination is your choice
     this.selected = { player, sourceKey: key, targets };
     this.render();
   }

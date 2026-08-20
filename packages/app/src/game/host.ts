@@ -56,18 +56,29 @@ export class HostSession {
   private pingSeq = 0;
   private lastAcceptedAt = performance.now();
   private closed = false;
+  private paused = false;
+  /** app-provided persistence hook, called after every meaningful change */
+  persist: (() => void) | null = null;
 
   constructor(
     config: Partial<Config>,
     roomCode: string | null,
     private transports: Transport[],
+    restore?: { lobby: LobbyState; state: GameState | null; version: number },
   ) {
-    this.lobby = {
+    this.lobby = restore?.lobby ?? {
       roomCode,
       players: [],
       config: makeConfig({ players: 2, ...config }),
       started: false,
     };
+    if (restore) {
+      this.state = restore.state;
+      this.version = restore.version;
+      if (this.lobby.started && this.state) this.armBots();
+      // devices reconnect via their idempotent hellos; mark them pending
+      this.lobby.players.forEach(p => { if (p.deviceKey !== 'bot') p.connected = false; });
+    }
     transports.forEach((tr, ti) => {
       tr.onMessage((peer, data) => this.onMessage(ti, peer, decodeMsg<ClientMsg>(data)));
       tr.onPeerLeave(peer => this.onPeerLeave(ti, peer));
@@ -180,11 +191,7 @@ export class HostSession {
     if (players < 2 || players > 4) return;
     this.lobby.config = makeConfig({ ...this.lobby.config, players });
     this.lobby.started = true;
-    this.bots.clear();
-    this.lobby.players.forEach((pl, i) => {
-      if (pl.bot !== undefined)
-        this.bots.set(i, { level: pl.bot as BotLevel, readyAt: 0, reaction: 0, actedVersion: -1, lastActAt: 0 });
-    });
+    this.armBots();
     this.state = newGame(this.lobby.config, this.seed());
     // monotonic across games: clients discard versions they have already seen,
     // so a restart after backToLobby must NOT reset the counter
@@ -244,6 +251,12 @@ export class HostSession {
   // ---------- arbitration ----------
 
   private submitIntent(deviceKey: string, msg: Extract<ClientMsg, { t: 'intent' }>): void {
+    if (this.paused) {
+      // paused: silently reject so the optimistic layer rolls back
+      const ref = this.peers.get(deviceKey);
+      ref?.transport.send(ref.peer, encodeMsg<HostMsg>({ t: 'reject', id: msg.id, reason: 'notPlaying' }));
+      return;
+    }
     this.arbiter.submit(
       { action: msg.action, stateVersion: msg.stateVersion, reactionMs: msg.reactionMs, sender: `${deviceKey}#${msg.id}` },
       performance.now(),
@@ -304,22 +317,22 @@ export class HostSession {
    * livelock backstop). Slow-but-playable positions never trigger an end.
    */
   private checkStalemate(): void {
-    if (!this.state || this.state.phase !== 'playing') return;
+    if (!this.state || this.state.phase !== 'playing' || this.paused) return;
     const now = performance.now();
     if (isDeadlock(this.state)) {
-      this.logLine('stalemate', { why: 'deadlock', snapshot: this.snapshot() });
+      this.logLine('stalemate', { why: 'deadlock', board: this.boardSummary() });
       this.applyDirect({ type: 'endRoundStalemate' });
       return;
     }
     if (isHardStalemate(this.state)) {
       if (this.state.config.earlyStalemate) {
-        this.logLine('stalemate', { why: 'earlyHard', snapshot: this.snapshot() });
+        this.logLine('stalemate', { why: 'earlyHard', board: this.boardSummary() });
         this.applyDirect({ type: 'endRoundStalemate' });
         return;
       }
       this.stuckSince ??= now;
       if (now - this.stuckSince > STUCK_GRACE_MS) {
-        this.logLine('stalemate', { why: 'grace', stuckMs: Math.round(now - this.stuckSince), snapshot: this.snapshot() });
+        this.logLine('stalemate', { why: 'grace', stuckMs: Math.round(now - this.stuckSince), board: this.boardSummary() });
         this.applyDirect({ type: 'endRoundStalemate' });
       }
       return;
@@ -334,8 +347,8 @@ export class HostSession {
     if (this.dbg.length > DEBUG_LOG_CAP) this.dbg.shift();
   }
 
-  /** compact, spoiler-free-per-line snapshot for diagnosing round ends */
-  private snapshot(): unknown {
+  /** compact board summary for diagnosing round ends in the debug log */
+  private boardSummary(): unknown {
     if (!this.state) return null;
     return {
       earlyStalemate: this.state.config.earlyStalemate,
@@ -375,17 +388,34 @@ export class HostSession {
 
   private broadcastLobby(): void {
     this.broadcast({ t: 'lobby', lobby: this.lobby });
+    this.persist?.();
   }
+
+  /** serializable session snapshot for "resume game" after a page reload */
+  snapshot(): { lobby: LobbyState; state: GameState | null; version: number } {
+    return { lobby: this.lobby, state: this.state, version: this.version };
+  }
+
+  /** pause/resume: freezes bots and rejects intents; broadcast to everyone */
+  setPaused(on: boolean): void {
+    if (this.paused === on) return;
+    this.paused = on;
+    this.stuckSince = null;
+    this.lastAcceptedAt = performance.now(); // don't let the watchdog count pause time
+    this.logLine(on ? 'pause' : 'resume');
+    this.sendState();
+  }
+
+  get isPaused(): boolean { return this.paused; }
 
   private sendState(acceptedIds: string[] = []): void {
     if (!this.state) return;
-    this.broadcast({ t: 'state', version: this.version, state: this.state, acceptedIds });
-    // a new state enables new moves — arm each bot's reaction clock for it
-    const now = performance.now();
-    for (const bs of this.bots.values()) {
-      bs.reaction = botReactionMs(bs.level, Math.random);
-      bs.readyAt = now + bs.reaction;
-    }
+    this.broadcast({ t: 'state', version: this.version, state: this.state, acceptedIds, paused: this.paused });
+    // NOTE: bot reaction clocks are NOT reset here. Doing so froze bots
+    // whenever a human played rapidly — every broadcast pushed their next
+    // action out again. Bots re-arm only after their own action (tickBots)
+    // and once at round start.
+    this.persist?.();
   }
 
   // ---------- bot driver ----------
@@ -395,8 +425,20 @@ export class HostSession {
    * intent carries that same reaction, so faster bots win reaction-time races
    * against slower bots and humans exactly as a quick human would.
    */
+  private armBots(): void {
+    this.bots.clear();
+    const now = performance.now();
+    this.lobby.players.forEach((pl, i) => {
+      if (pl.bot !== undefined) {
+        const level = pl.bot as BotLevel;
+        const reaction = botReactionMs(level, Math.random);
+        this.bots.set(i, { level, readyAt: now + reaction, reaction, actedVersion: -1, lastActAt: 0 });
+      }
+    });
+  }
+
   private tickBots(): void {
-    if (!this.state || this.state.phase !== 'playing' || this.bots.size === 0) return;
+    if (!this.state || this.state.phase !== 'playing' || this.bots.size === 0 || this.paused) return;
     const now = performance.now();
     for (const [player, bs] of this.bots) {
       if (now < bs.readyAt) continue;

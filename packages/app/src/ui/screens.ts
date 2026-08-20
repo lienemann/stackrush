@@ -17,6 +17,8 @@ export interface HomeCallbacks {
   installPrompt: (() => void) | null;
   /** prefilled room code (retry after a refused join, or a ?join= deep link) */
   initialCode?: string;
+  /** a saved session snapshot exists — offer to resume it */
+  onResume?: () => void;
 }
 
 /**
@@ -106,7 +108,8 @@ export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettin
       joinHint.textContent = t(S, 'joinAs', { names: names.map(n => n.trim() || '?').join(', ') });
     }),
     h('div', { className: 'stack' },
-      h('button', { className: 'primary', onclick: () => {
+      cb.onResume ? h('button', { className: 'primary', onclick: () => cb.onResume!() }, S.resumeGame) : null,
+      h('button', { className: cb.onResume ? '' : 'primary', onclick: () => {
         if (seatNames.length + botLevels.length < 2) { toast(`${S.players}: 2–4`); return; }
         cb.onPlayLocal(seatNames.map(n => n.trim() || '?'), botLevels);
       } }, S.playLocal),
@@ -129,6 +132,12 @@ export function renderHome(root: HTMLElement, S: Strings, settings: DeviceSettin
     h('div', { className: 'rowline', style: 'width:min(420px,100%)' },
       h('button', { className: 'ghost', onclick: () => showManual(S) }, S.howToPlay),
       h('button', { className: 'ghost', onclick: () => showAbout(S) }, S.about),
+      h('button', { className: 'ghost', onclick: async () => {
+        const url = `${location.origin}${location.pathname}`;
+        try { if (navigator.share) { await navigator.share({ url, title: S.appName }); return; } }
+        catch (e) { if ((e as Error).name === 'AbortError') return; }
+        try { await navigator.clipboard.writeText(url); toast(S.copied); } catch { toast(url, 4000); }
+      } }, S.shareApp),
     ),
   ));
 }
@@ -337,29 +346,58 @@ function sheet(...children: Array<Node | string | null>): HTMLElement {
   return backdrop;
 }
 
-/** in-game settings sheet (gear): language, manual, about, debug log, exits */
-export function showGameMenu(
-  S: Strings, settings: DeviceSettings,
-  onLocale: (l: DeviceSettings['locale']) => void, onLeave: () => void,
-  onDownloadLog?: () => void,
-  onBackToLobby?: () => void,
-): void {
+/** small yes/no confirmation sheet */
+export function confirmSheet(S: Strings, question: string, onYes: () => void): void {
+  const backdrop = sheet(
+    h('h2', { style: 'font-size:1.05rem' }, question),
+    h('button', { className: 'primary', onclick: () => { backdrop.remove(); onYes(); } }, 'OK'),
+    h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
+  );
+}
+
+export interface GameMenuOptions {
+  onLocale: (l: DeviceSettings['locale']) => void;
+  onLeave: () => void;
+  onDownloadLog?: () => void;
+  onBackToLobby?: () => void;
+  /** host: pause the running round for everyone (also freezes bots) */
+  onPause?: () => void;
+  /** per local seat: target-highlight preference */
+  hintSeats?: Array<{ name: string; value: boolean; set: (v: boolean) => void }>;
+  /** a round is running: guard the exits with a confirmation */
+  confirmExits?: boolean;
+}
+
+/** in-game settings sheet (gear) */
+export function showGameMenu(S: Strings, settings: DeviceSettings, o: GameMenuOptions): void {
   const langSel = h('select', {});
   langSel.append(h('option', { value: 'auto' }, S.languageAuto));
   for (const loc of Object.keys(locales)) langSel.append(h('option', { value: loc }, loc.toUpperCase()));
   langSel.value = settings.locale;
+  const guarded = (question: string, action: () => void) => () => {
+    backdrop.remove();
+    if (o.confirmExits) confirmSheet(S, question, action);
+    else action();
+  };
   const backdrop = sheet(
     h('h2', {}, S.settings),
+    o.onPause ? h('button', { className: 'primary', onclick: () => { backdrop.remove(); o.onPause!(); } }, S.pauseGame) : null,
     h('label', { className: 'switch' }, h('span', {}, S.language), langSel),
+    ...(o.hintSeats ?? []).map(hs => {
+      const input = h('input', { type: 'checkbox' });
+      input.checked = hs.value;
+      input.addEventListener('change', () => hs.set(input.checked));
+      return h('label', { className: 'switch' }, h('span', {}, `${S.showHints} — ${hs.name}`), input);
+    }),
     h('button', { onclick: () => { backdrop.remove(); showManual(S); } }, S.howToPlay),
     h('button', { onclick: () => { backdrop.remove(); showAbout(S); } }, S.about),
-    onDownloadLog ? h('button', { onclick: () => onDownloadLog() }, S.downloadLog) : null,
+    o.onDownloadLog ? h('button', { onclick: () => o.onDownloadLog!() }, S.downloadLog) : null,
     // host: abandon the current game but KEEP the seat roster (players, bots)
-    onBackToLobby ? h('button', { onclick: () => { backdrop.remove(); onBackToLobby(); } }, S.backToLobby) : null,
-    h('button', { onclick: () => { backdrop.remove(); onLeave(); } }, S.leaveGame),
+    o.onBackToLobby ? h('button', { onclick: guarded(S.confirmLobby, o.onBackToLobby) }, S.backToLobby) : null,
+    h('button', { onclick: guarded(S.confirmLeave, o.onLeave) }, S.leaveGame),
     h('button', { className: 'ghost', onclick: () => backdrop.remove() }, S.close),
   );
-  langSel.addEventListener('change', () => { onLocale(langSel.value as DeviceSettings['locale']); backdrop.remove(); });
+  langSel.addEventListener('change', () => { o.onLocale(langSel.value as DeviceSettings['locale']); backdrop.remove(); });
 }
 
 /** the manual — original rules text (i18n key `manual`), rendered as sections */
