@@ -71,20 +71,22 @@ test('level 10 takes an available center play (win-condition first)', () => {
   assert.ok(apply(g, action).ok);
 });
 
-test('level 1 overlooks obvious plays often (weak play, not just slow)', () => {
+test('level 1 plays mostly sensibly — occasional misses, never dominant', () => {
   const g = rig(s => {
     s.players[0].row = [[card(0, 1)], [card(1, 7)], [card(2, 7)]];
     s.players[0].hand = [card(3, 5), card(3, 6), card(3, 7)];
     s.center = [];
   });
   let missed = 0, played = 0;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 100; i++) {
     const a = chooseBotAction(g, 0, 1, rng(i * 13 + 1));
     if (a?.type === 'playToCenter') played++;
     else missed++; // flipped or idled despite a playable 1
   }
-  assert.ok(missed > 15, `L1 missed only ${missed}/60 — too strong`);
-  assert.ok(played > 0, 'L1 must still find plays sometimes');
+  // difficulty comes from reaction time, not blunders: L1 still misses
+  // sometimes (human-like), but takes the obvious play most of the time
+  assert.ok(played >= 70, `L1 played only ${played}/100 — looks broken`);
+  assert.ok(missed >= 5, `L1 missed ${missed}/100 — should still be fallible`);
 });
 
 test('no placement available -> flips the hand to cycle cards', () => {

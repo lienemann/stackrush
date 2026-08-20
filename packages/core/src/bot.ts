@@ -34,16 +34,21 @@ export interface BotProfile {
   diligence: number;
 }
 
+/**
+ * Difficulty lives primarily in REACTION TIME: low levels are slow but still
+ * play sensibly (small oversight), so they feel like a leisurely human
+ * rather than a broken one.
+ */
 export const BOT_PROFILES: Record<BotLevel, BotProfile> = {
-  1: { reactionMs: [1900, 2900], skill: 0.10, oversight: 0.65, planRefill: false, useBuffer: false, diligence: 0.45 },
-  2: { reactionMs: [1500, 2300], skill: 0.20, oversight: 0.50, planRefill: false, useBuffer: false, diligence: 0.55 },
-  3: { reactionMs: [1200, 1900], skill: 0.30, oversight: 0.38, planRefill: false, useBuffer: false, diligence: 0.65 },
-  4: { reactionMs: [950, 1500], skill: 0.40, oversight: 0.28, planRefill: false, useBuffer: false, diligence: 0.75 },
-  5: { reactionMs: [700, 1100], skill: 0.50, oversight: 0.18, planRefill: false, useBuffer: false, diligence: 0.85 },
-  6: { reactionMs: [520, 820], skill: 0.58, oversight: 0.10, planRefill: false, useBuffer: false, diligence: 0.9 },
-  7: { reactionMs: [380, 600], skill: 0.68, oversight: 0.05, planRefill: true, useBuffer: false, diligence: 0.95 },
-  8: { reactionMs: [300, 480], skill: 0.78, oversight: 0.02, planRefill: true, useBuffer: true, diligence: 1.0 },
-  9: { reactionMs: [220, 360], skill: 0.90, oversight: 0, planRefill: true, useBuffer: true, diligence: 1.0 },
+  1: { reactionMs: [2600, 3900], skill: 0.30, oversight: 0.18, planRefill: false, useBuffer: false, diligence: 0.6 },
+  2: { reactionMs: [2100, 3100], skill: 0.38, oversight: 0.14, planRefill: false, useBuffer: false, diligence: 0.7 },
+  3: { reactionMs: [1600, 2400], skill: 0.45, oversight: 0.11, planRefill: false, useBuffer: false, diligence: 0.8 },
+  4: { reactionMs: [1200, 1800], skill: 0.52, oversight: 0.08, planRefill: false, useBuffer: false, diligence: 0.85 },
+  5: { reactionMs: [900, 1350], skill: 0.60, oversight: 0.06, planRefill: false, useBuffer: false, diligence: 0.9 },
+  6: { reactionMs: [650, 1000], skill: 0.66, oversight: 0.04, planRefill: false, useBuffer: false, diligence: 0.95 },
+  7: { reactionMs: [460, 720], skill: 0.72, oversight: 0.02, planRefill: true, useBuffer: false, diligence: 1.0 },
+  8: { reactionMs: [340, 530], skill: 0.80, oversight: 0.01, planRefill: true, useBuffer: true, diligence: 1.0 },
+  9: { reactionMs: [230, 380], skill: 0.90, oversight: 0, planRefill: true, useBuffer: true, diligence: 1.0 },
   10: { reactionMs: [150, 280], skill: 1.0, oversight: 0, planRefill: true, useBuffer: true, diligence: 1.0 },
 };
 

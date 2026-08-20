@@ -135,6 +135,33 @@ test('debug log: records start and accepted actions as JSONL', async () => {
   host.close();
 });
 
+test('pause: freezes play for everyone, resume continues', async () => {
+  const hub = new LoopbackHub();
+  const host = new HostSession({}, 'PAUS1', [hub.endpoint('host-net')]);
+  const a = new ClientSession(hub.endpoint('devA'), 'devA');
+  const b = new ClientSession(hub.endpoint('devB'), 'devB');
+  a.hello(['A']); b.hello(['B']);
+  await until(() => (a.lobby?.players.length ?? 0) === 2);
+  host.start();
+  await until(() => a.displayState() !== null && b.displayState() !== null);
+
+  host.setPaused(true);
+  await until(() => a.paused && b.paused);
+  const rollbacks: unknown[] = [];
+  a.on('rollback', act => rollbacks.push(act));
+  const v0 = a.version;
+  assert.equal(a.submit({ type: 'flipHand', player: 0 }), null); // optimistic ok
+  await wait(150);
+  assert.equal(a.version, v0, 'no state advances while paused');
+  assert.equal(rollbacks.length, 1, 'intent during pause is rejected and rolled back');
+
+  host.setPaused(false);
+  await until(() => !a.paused);
+  assert.equal(a.submit({ type: 'flipHand', player: 0 }), null);
+  await until(() => a.version > v0);
+  host.close();
+});
+
 test('computer player: host drives a bot seat with no human input', async () => {
   const hub = new LoopbackHub();
   const host = new HostSession({ quickToCenter: true }, 'BOT01', [hub.endpoint('host-net')]);

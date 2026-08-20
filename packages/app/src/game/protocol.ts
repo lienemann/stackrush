@@ -29,7 +29,7 @@ export type ClientMsg =
 
 export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }
-  | { t: 'state'; version: number; state: GameState; acceptedIds: string[] }
+  | { t: 'state'; version: number; state: GameState; acceptedIds: string[]; paused?: boolean }
   | { t: 'reject'; id: string; reason: Rejection }
   | { t: 'ping'; id: number }
   /** join refused: the game already runs, or too few free seats (free = count) */

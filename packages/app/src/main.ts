@@ -81,9 +81,58 @@ function applyPendingBots(bots: number[]): void {
 const clampLevel = (l: number): BotLevel =>
   Math.max(1, Math.min(10, Math.round(l))) as BotLevel;
 
+// ---------- session snapshot: survive an app switch that reloads the page ----------
+
+const RESUME_KEY = 'stackrush.session.v1';
+const RESUME_MAX_AGE_MS = 6 * 3600_000;
+
+function persistSnapshot(): void {
+  if (!host) return;
+  try {
+    localStorage.setItem(RESUME_KEY, JSON.stringify({ at: Date.now(), snap: host.snapshot() }));
+  } catch { /* storage full/blocked — resume just won't be offered */ }
+}
+
+function clearSnapshot(): void {
+  try { localStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+}
+
+function loadSnapshot(): ReturnType<HostSession['snapshot']> | null {
+  try {
+    const raw = localStorage.getItem(RESUME_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { at: number; snap: ReturnType<HostSession['snapshot']> };
+    if (Date.now() - data.at > RESUME_MAX_AGE_MS) return null;
+    if (!data.snap?.lobby?.players?.length) return null;
+    return data.snap;
+  } catch { return null; }
+}
+
+/** rebuild the host session from a snapshot; peers re-attach via their hellos */
+async function resumeGame(): Promise<void> {
+  const snap = loadSnapshot();
+  if (!snap) { render(); return; }
+  const hub = new LoopbackHub();
+  const transports: Transport[] = [hub.endpoint('host-net')];
+  if (snap.lobby.roomCode) {
+    try {
+      const { TrysteroTransport } = await import('@stackrush/net/trystero');
+      transports.push(new TrysteroTransport(snap.lobby.roomCode));
+    } catch { toast('WebRTC unavailable'); }
+  }
+  host = new HostSession({}, snap.lobby.roomCode, transports, snap);
+  host.persist = persistSnapshot;
+  const myNames = snap.lobby.players
+    .filter(p => p.deviceKey === settings.deviceKey)
+    .map(p => p.name);
+  attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey),
+    myNames.length > 0 ? myNames : settings.seatNames);
+}
+
 function playLocal(seatNames: string[], botLevels: number[] = []): void {
   const hub = new LoopbackHub();
   host = new HostSession({}, null, [hub.endpoint('host-net')]);
+  host.persist = persistSnapshot;
   attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey), seatNames);
   applyPendingBots(botLevels);
 }
@@ -99,6 +148,7 @@ async function hostOnline(seatNames: string[], botLevels: number[] = []): Promis
     toast('WebRTC unavailable — local play only');
   }
   host = new HostSession({}, code, transports);
+  host.persist = persistSnapshot;
   attachClient(new ClientSession(hub.endpoint('ui'), settings.deviceKey), seatNames);
   applyPendingBots(botLevels);
 }
@@ -177,6 +227,10 @@ async function beaconCode(): Promise<void> {
 }
 
 function leave(): void {
+  // deliberate exit: nothing to resume. Detach the persist hook BEFORE
+  // closing — teardown emits peer-leave -> lobby broadcast -> persist, which
+  // would re-save the snapshot right after clearing it.
+  if (host) host.persist = null;
   stopBeacon?.(); stopBeacon = null;
   stopAcoustic?.(); stopAcoustic = null;
   if (helloTimer) { clearInterval(helloTimer); helloTimer = null; }
@@ -185,10 +239,25 @@ function leave(): void {
   client = null;
   host = null;
   table = null;
+  clearSnapshot();
   setWakeLock(false);
   hideBanner();
   screen = 'home';
   render();
+}
+
+// ---------- rotate hint (landscape phones; a tab cannot lock orientation) ----------
+
+let rotateHint: HTMLElement | null = null;
+function ensureRotateHint(): void {
+  if (rotateHint) {
+    (rotateHint.firstChild as HTMLElement).textContent = S.rotateHint;
+    return;
+  }
+  const label = h('span', {}, S.rotateHint);
+  rotateHint = h('div', { className: 'rotatehint' }, label,
+    h('button', { className: 'ghost', 'aria-label': S.close, onclick: () => rotateHint?.classList.add('off') }, '✕'));
+  document.body.append(rotateHint);
 }
 
 // ---------- banner ----------
@@ -208,6 +277,7 @@ function hideBanner(): void { banner?.remove(); banner = null; }
 
 function render(): void {
   S = strings(settings);
+  ensureRotateHint();
   switch (screen) {
     case 'home':
       setWakeLock(false);
@@ -219,6 +289,7 @@ function render(): void {
         onLocale: setLocale,
         installPrompt: installTrigger(),
         initialCode: lastCode,
+        onResume: loadSnapshot() ? () => void resumeGame() : undefined,
       });
       return;
     case 'lobby': {
@@ -229,6 +300,9 @@ function render(): void {
           h('button', { className: 'ghost', onclick: leave }, S.leaveGame)));
         return;
       }
+      // config toggles rebroadcast the lobby — keep the scroll position so a
+      // checkbox tap doesn't fling the page back to the top
+      const prevScroll = root.querySelector('.screen')?.scrollTop ?? 0;
       renderLobby(root, S, lobby, {
         isHost: host !== null,
         onStart: () => host?.start(),
@@ -238,26 +312,38 @@ function render(): void {
         onRemovePlayer: i => host?.removePlayer(i),
         onLeave: leave,
       });
+      const scr = root.querySelector('.screen');
+      if (scr && prevScroll > 0) scr.scrollTop = prevScroll;
       return;
     }
     case 'table': {
       if (!client) return;
       stopBeacon?.(); stopBeacon = null; // pairing done once the game runs
       if (!table) {
+        const backToLobby = host ? () => { table = null; screen = 'lobby'; host!.backToLobby(); } : undefined;
         table = new TableView(root, client, settings.deviceKey, S,
           host ? {
             nextRound: () => host!.nextRound(),
             rematch: () => host!.rematch(),
-            backToLobby: () => { table = null; screen = 'lobby'; host!.backToLobby(); },
+            backToLobby: backToLobby!,
           } : null,
-          () => showGameMenu(S, settings, setLocale, leave,
-            host ? downloadDebugLog : undefined,
-            host ? () => { table = null; screen = 'lobby'; host!.backToLobby(); } : undefined),
-          leave);
+          () => showGameMenu(S, settings, {
+            onLocale: setLocale,
+            onLeave: leave,
+            onDownloadLog: host ? downloadDebugLog : undefined,
+            onBackToLobby: backToLobby,
+            onPause: host && !host.isPaused && client?.displayState()?.phase === 'playing'
+              ? () => host!.setPaused(true) : undefined,
+            hintSeats: localSeatHintToggles(),
+            confirmExits: client?.displayState()?.phase === 'playing',
+          }),
+          leave,
+          player => hintsForPlayer(player),
+          host ? on => host!.setPaused(on) : undefined);
       }
       table.setStrings(S);
       table.render();
-      const playing = client.displayState()?.phase === 'playing';
+      const playing = client.displayState()?.phase === 'playing' && !client.paused;
       setWakeLock(!!playing);
       // stamp the render time of this authoritative version — the basis of
       // reactionMs (docs/ARCHITECTURE.md data flow)
@@ -266,6 +352,42 @@ function render(): void {
       return;
     }
   }
+}
+
+/** order of this player's seat among the local seats, or -1 if not local */
+function localSeatOrder(player: number): number {
+  const players = client?.lobby?.players ?? [];
+  let order = 0;
+  for (let i = 0; i < players.length; i++) {
+    if (players[i].deviceKey !== settings.deviceKey) continue;
+    if (i === player) return order;
+    order++;
+  }
+  return -1;
+}
+
+function hintsForPlayer(player: number): boolean {
+  const order = localSeatOrder(player);
+  return order < 0 ? true : settings.hintsBySeat[order] ?? true;
+}
+
+function localSeatHintToggles(): Array<{ name: string; value: boolean; set: (v: boolean) => void }> {
+  const players = client?.lobby?.players ?? [];
+  const out: Array<{ name: string; value: boolean; set: (v: boolean) => void }> = [];
+  players.forEach((p, i) => {
+    if (p.deviceKey !== settings.deviceKey) return;
+    const order = out.length;
+    out.push({
+      name: p.name,
+      value: settings.hintsBySeat[order] ?? true,
+      set: v => {
+        settings.hintsBySeat[order] = v;
+        saveSettings(settings);
+        table?.render();
+      },
+    });
+  });
+  return out;
 }
 
 /**
@@ -316,7 +438,24 @@ function setLocale(locale: DeviceSettings['locale']): void {
   render();
 }
 
-window.addEventListener('pagehide', () => { host?.close(); client?.close(); });
+// NOTE: no pagehide teardown. Mobile browsers fire pagehide on app switches
+// too (especially iOS), which used to kill the session mid-game. Real
+// unloads drop the connections anyway, and stale peers are cleaned up by the
+// host's leave handling; returning devices re-attach via idempotent hellos.
+
+// app switch resilience: when we come back to the foreground, re-announce —
+// the hello is idempotent and the host answers with the current state
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && client && !host)
+    client.hello(settings.seatNames);
+});
+
+// keep the table upright where the platform lets us (installed PWA/fullscreen);
+// in a plain browser tab this is not permitted — the rotate hint covers that
+try {
+  (window.screen.orientation as unknown as { lock?: (o: string) => Promise<void> })
+    .lock?.('portrait').catch(() => undefined);
+} catch { /* not supported */ }
 
 // deep link from a shared join link / scanned QR: prefill the room code
 const joinParam = new URLSearchParams(location.search).get('join');

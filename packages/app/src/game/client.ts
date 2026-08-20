@@ -28,6 +28,8 @@ const PENDING_TIMEOUT_MS = 3000;
 
 export class ClientSession {
   lobby: LobbyState | null = null;
+  /** host-declared pause (freezes input UI) */
+  paused = false;
   private authoritative: GameState | null = null;
   private authoritativeVersion = 0;
   private pending: Pending[] = [];
@@ -82,7 +84,11 @@ export class ClientSession {
         return;
       }
       case 'state': {
-        if (msg.version <= this.authoritativeVersion) return; // stale/duplicate
+        this.paused = msg.paused ?? false;
+        if (msg.version <= this.authoritativeVersion) {
+          this.listeners.state?.(); // pause toggles rebroadcast the same version
+          return;
+        }
         this.authoritative = msg.state;
         this.authoritativeVersion = msg.version;
         // confirmed intents leave the pending list silently; the rest are
